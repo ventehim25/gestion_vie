@@ -56,6 +56,8 @@ function seed() {
     },
     farm: {
       opening: { perso: 0, partage: 0 },
+      trees: { me: 79, gm: 132 },
+      sheep: { log: [] },
       tx: [],
     },
     projects: [
@@ -75,7 +77,21 @@ function load() {
   try { const r = localStorage.getItem(KEY); if (r) return migrate(JSON.parse(r)); } catch (e) {}
   const s = seed(); persist(s); return s;
 }
-function migrate(d) { const s = seed(); return Object.assign({}, s, d); }
+function migrate(d) {
+  const s = seed();
+  const out = Object.assign({}, s, d);
+  out.profile = Object.assign({}, s.profile, d.profile || {});
+  out.mother = Object.assign({}, s.mother, d.mother || {});
+  out.spiritual = Object.assign({}, s.spiritual, d.spiritual || {});
+  const df = d.farm || {};
+  out.farm = {
+    opening: Object.assign({}, s.farm.opening, df.opening || {}),
+    trees: Object.assign({}, s.farm.trees, df.trees || {}),
+    sheep: Object.assign({}, s.farm.sheep, df.sheep || {}),
+    tx: Array.isArray(df.tx) ? df.tx : s.farm.tx,
+  };
+  return out;
+}
 function persist(d = DB) { localStorage.setItem(KEY, JSON.stringify(d)); }
 function save() { persist(); }
 
@@ -140,6 +156,18 @@ function renderHome(v) {
   const tasks = DB.tasks.filter(t => t.date === todayISO());
   const tasksDone = tasks.filter(t => t.done).length;
   const hello = DB.profile.name ? `Salam ${escape(DB.profile.name)} 👋` : 'Salam 👋';
+  const mSolde = mamanSolde();
+  const fPerso = caisseSums('perso').solde;
+  const fShare = treeSplit(caisseSums('partage').outs);
+  const sheepBen = sheepStats().benefice;
+  const caisses = [
+    ['💰 Capital (moi)', DB.capital, 'teal'],
+    ['👵 Caisse Maman', mSolde, mSolde >= 0 ? 'pos' : 'neg'],
+    ['🚜 Ferme — perso', fPerso, fPerso >= 0 ? 'pos' : 'neg'],
+    ['🚜 Ferme — ma part', fShare.me, 'neg'],
+    ['👵 Ferme — grand-mère', fShare.gm, 'neg'],
+    ['🐑 Moutons (bénéfice)', sheepBen, sheepBen >= 0 ? 'pos' : 'neg'],
+  ];
 
   v.append(el(`<div>
     <h1>${hello}</h1>
@@ -156,6 +184,12 @@ function renderHome(v) {
       <div class="row between"><h3 style="margin:0">Disponible / mois (revenus − charges fixes)</h3></div>
       <div class="value ${dispo >= 0 ? 'pos' : 'neg'}" style="font-size:1.6rem;font-weight:800;margin-top:6px">${fmtDH(dispo)}</div>
       <small>${fixed === 0 ? 'Renseigne tes charges fixes dans Budget pour un chiffre réel.' : 'Ce qui te reste pour épargner / loyer / projets.'}</small>
+    </div>
+
+    <div class="section-title">Vue d'ensemble des caisses</div>
+    <div class="card">
+      ${caisses.map(([lab, val, cls]) => `<div class="item"><span class="grow"><div class="t">${lab}</div></span><b class="amt ${cls}">${fmtDH(val)}</b></div>`).join('')}
+      <small>« Ma part » et « grand-mère » = répartition des dépenses partagées de la ferme au prorata des arbres.</small>
     </div>
 
     <div class="section-title">Aujourd'hui</div>
@@ -514,6 +548,24 @@ function caisseSums(c) {
   const outs = list.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
   return { solde: open + ins - outs, outs, ins, open };
 }
+function treeSplit(amount) {
+  const me = +DB.farm.trees.me || 0, gm = +DB.farm.trees.gm || 0, tot = (me + gm) || 1;
+  return { me: amount * me / tot, gm: amount * gm / tot, meN: me, gmN: gm, tot: me + gm };
+}
+function sheepStats() {
+  const log = DB.farm.sheep.log;
+  const plus = ['achat', 'naissance'], moins = ['vente', 'perte'];
+  const heads = log.reduce((a, e) => a + (plus.includes(e.type) ? +e.heads || 0 : moins.includes(e.type) ? -(+e.heads || 0) : 0), 0);
+  const achats = log.filter(e => e.type === 'achat').reduce((a, e) => a + (+e.amount || 0), 0);
+  const ventes = log.filter(e => e.type === 'vente').reduce((a, e) => a + (+e.amount || 0), 0);
+  return { heads, achats, ventes, benefice: ventes - achats };
+}
+function mamanSolde() {
+  const all = DB.transactions.filter(t => t.account === 'Maman');
+  const ins = all.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
+  const outs = all.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
+  return (+DB.mother.opening || 0) + ins - outs;
+}
 function farmRow(t) {
   return `<div class="item"><span class="ic">${t.type === 'revenu' ? '＋' : '－'}</span>
     <span class="grow"><div class="t">${escape(t.cat)}${t.note ? ' · ' + escape(t.note) : ''}</div>
@@ -523,6 +575,7 @@ function farmRow(t) {
 }
 function renderFerme(v) {
   const sP = caisseSums('perso'), sG = caisseSums('partage');
+  const tsp = treeSplit(sG.outs), ss = sheepStats();
   const m = monthOf(todayISO());
   const monthOut = DB.farm.tx.filter(t => t.type === 'depense' && monthOf(t.date) === m).reduce((a, t) => a + (+t.amount || 0), 0);
   let list = DB.farm.tx.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
@@ -542,6 +595,28 @@ function renderFerme(v) {
       </div>
     </div>
     <div class="stat" style="margin-top:12px"><div class="label">Total dépensé ce mois (ferme)</div><div class="value neg">${fmtDH(monthOut)}</div></div>
+
+    <div class="section-title">🌳 Répartition par arbres (caisse partagée)</div>
+    <div class="card">
+      <div class="row between"><span>Total dépensé (partagé)</span><b>${fmtDH(sG.outs)}</b></div>
+      <button class="btn ghost sm" id="editTrees" style="margin:8px 0">🌳 ${tsp.tot} arbres — modifier</button>
+      <div class="divider"></div>
+      <div class="row between"><span>🧍 Ma part <small>(${tsp.meN}/${tsp.tot})</small></span><b class="amt neg">${fmtDH(tsp.me)}</b></div>
+      <div class="bar"><span style="width:${tsp.tot ? tsp.meN / tsp.tot * 100 : 0}%"></span></div>
+      <div class="row between" style="margin-top:10px"><span>👵 Part grand-mère <small>(${tsp.gmN}/${tsp.tot})</small></span><b class="amt neg">${fmtDH(tsp.gm)}</b></div>
+      <div class="bar"><span style="width:${tsp.tot ? tsp.gmN / tsp.tot * 100 : 0}%"></span></div>
+    </div>
+
+    <div class="section-title">🐑 Moutons</div>
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">Suivi du troupeau</h3><button class="btn ghost sm" id="addSheep">+ Mouvement</button></div>
+      <div class="grid3" style="margin-top:10px">
+        <div class="stat"><div class="label">Têtes</div><div class="value teal">${ss.heads}</div></div>
+        <div class="stat"><div class="label">Investi</div><div class="value neg">${fmtDH(ss.achats)}</div></div>
+        <div class="stat"><div class="label">Bénéfice</div><div class="value ${ss.benefice >= 0 ? 'pos' : 'neg'}">${fmtDH(ss.benefice)}</div></div>
+      </div>
+      <div id="sheepLog" style="margin-top:8px"></div>
+    </div>
 
     <div class="section-title">Mouvements</div>
     <div class="seg" id="farmFilter" style="margin-bottom:10px">
@@ -563,6 +638,48 @@ function renderFerme(v) {
     const bg = modal('Solde de départ — ' + FARM_CAISSES[c], `<p><small>Argent déjà présent dans cette caisse avant le suivi.</small></p>${field('Montant (DH)', `<input id="o_v" type="number" inputmode="decimal" value="${DB.farm.opening[c] || ''}">`)}<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
     $('#ok', bg).onclick = () => { DB.farm.opening[c] = +$('#o_v', bg).value || 0; save(); bg.remove(); router(); };
   });
+
+  // Arbres
+  $('#editTrees', v).onclick = () => {
+    const bg = modal('Nombre d’arbres', `<p><small>La caisse partagée est répartie au prorata des arbres.</small></p>
+      ${field('🧍 Mes arbres', `<input id="t_me" type="number" inputmode="numeric" value="${DB.farm.trees.me}">`)}
+      ${field('👵 Arbres grand-mère', `<input id="t_gm" type="number" inputmode="numeric" value="${DB.farm.trees.gm}">`)}
+      <div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
+    $('#ok', bg).onclick = () => { DB.farm.trees.me = +$('#t_me', bg).value || 0; DB.farm.trees.gm = +$('#t_gm', bg).value || 0; save(); bg.remove(); router(); };
+  };
+
+  // Moutons — log
+  const sl = $('#sheepLog', v);
+  const log = DB.farm.sheep.log.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  const SHEEP_IC = { achat: '🛒', vente: '💰', naissance: '🐑', perte: '⚠️' };
+  if (!log.length) sl.append(el('<small>Aucun mouvement. Ajoute un achat, une vente, une naissance ou une perte.</small>'));
+  log.forEach(e => {
+    const signHeads = (e.type === 'vente' || e.type === 'perte') ? '−' : '+';
+    const row = el(`<div class="item"><span class="ic">${SHEEP_IC[e.type] || '🐑'}</span>
+      <span class="grow"><div class="t">${signHeads}${e.heads} tête(s) · ${e.type}${e.note ? ' · ' + escape(e.note) : ''}</div><div class="s">${e.date}${e.amount ? ' · ' + fmtDH(e.amount) : ''}</div></span>
+      <button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-x]', row).onclick = () => { DB.farm.sheep.log = DB.farm.sheep.log.filter(x => x.id !== e.id); save(); router(); };
+    sl.append(row);
+  });
+  $('#addSheep', v).onclick = () => sheepModal();
+}
+function sheepModal() {
+  const types = { achat: 'Achat (+ têtes, − argent)', vente: 'Vente (− têtes, + argent)', naissance: 'Naissance (+ têtes)', perte: 'Perte / mort (− têtes)' };
+  const body = `
+    ${field('Type', `<select id="s_type">${Object.entries(types).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>`)}
+    ${field('Nombre de têtes', '<input id="s_h" type="number" inputmode="numeric" value="1" autofocus>')}
+    ${field('Montant (DH) — achat ou vente', '<input id="s_a" type="number" inputmode="decimal" placeholder="0">')}
+    ${field('Date', `<input id="s_d" type="date" value="${todayISO()}">`)}
+    ${field('Note (optionnel)', '<input id="s_n" placeholder="ex: souk El Arbaa">')}
+    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`;
+  const bg = modal('Mouvement — moutons', body);
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => {
+    const heads = +$('#s_h', bg).value || 0;
+    if (!heads) { $('#s_h', bg).focus(); return; }
+    DB.farm.sheep.log.push({ id: uid(), type: $('#s_type', bg).value, heads, amount: +$('#s_a', bg).value || 0, date: $('#s_d', bg).value, note: $('#s_n', bg).value.trim() });
+    save(); bg.remove(); router();
+  };
 }
 function farmOpModal() {
   let type = 'depense';
