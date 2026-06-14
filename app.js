@@ -95,7 +95,7 @@ function todayTotals() {
    ============================================================ */
 const routes = {
   '/': renderHome, 'budget': renderBudget, 'planning': renderPlanning,
-  'famille': renderFamille, 'spirituel': renderSpirituel, 'projets': renderProjets,
+  'famille': renderFamille, 'maman': renderMaman, 'spirituel': renderSpirituel, 'projets': renderProjets,
   'reglages': renderReglages,
 };
 function currentRoute() { return (location.hash.replace(/^#\//, '') || '/'); }
@@ -212,7 +212,8 @@ function renderBudget(v) {
 
     <div class="section-title">Dépenses par catégorie (ce mois)</div>
     <div class="card">
-      ${cats.length ? cats.map(([c, n]) => `<div style="margin-bottom:10px"><div class="row between"><span>${escape(c)}</span><b>${fmtDH(n)}</b></div><div class="bar"><span style="width:${n / maxCat * 100}%"></span></div></div>`).join('') : '<div class="empty">Aucune dépense ce mois. Ajoute-en avec le bouton +.</div>'}
+      ${cats.length ? cats.map(([c, n]) => `<div class="catrow" data-catrow="${escape(c)}" style="margin-bottom:10px;cursor:pointer"><div class="row between"><span>${escape(c)} <small>›</small></span><b>${fmtDH(n)}</b></div><div class="bar"><span style="width:${n / maxCat * 100}%"></span></div></div>`).join('') : '<div class="empty">Aucune dépense ce mois. Ajoute-en avec le bouton +.</div>'}
+      ${cats.length ? '<small>Touche une catégorie pour voir le détail (ex : viande, lait…) et repérer le gaspillage.</small>' : ''}
     </div>
 
     <div class="section-title">Opérations du mois</div>
@@ -227,6 +228,22 @@ function renderBudget(v) {
   $('#addFix', v).onclick = () => recurModal('fixed');
   v.querySelectorAll('[data-del-tx]').forEach(b => b.onclick = () => { DB.transactions = DB.transactions.filter(t => t.id !== b.dataset.delTx); save(); router(); });
   v.querySelectorAll('[data-edit-recur]').forEach(b => b.onclick = () => recurModal(b.dataset.kind, b.dataset.editRecur));
+  v.querySelectorAll('[data-catrow]').forEach(r => r.onclick = () => catDetailModal(r.dataset.catrow));
+}
+function catDetailModal(cat) {
+  const m = monthOf(todayISO());
+  const list = DB.transactions.filter(t => t.type === 'depense' && t.cat === cat && monthOf(t.date) === m);
+  const groups = {};
+  list.forEach(t => { const k = t.note ? t.note : '(sans détail)'; groups[k] = (groups[k] || 0) + (+t.amount || 0); });
+  const rows = Object.entries(groups).sort((a, b) => b[1] - a[1]);
+  const total = list.reduce((a, t) => a + (+t.amount || 0), 0);
+  const body = `
+    <div class="hint">Astuce : écris le produit dans la <b>note</b> en ajoutant une dépense (ex : viande, lait, légumes). Ici tu vois où part l'argent et tu repères le gaspillage.</div>
+    <div>${rows.length ? rows.map(([k, n]) => `<div class="item"><span class="ic">🧺</span><span class="grow"><div class="t">${escape(k)}</div></span><b class="amt neg">${fmtDH(n)}</b></div>`).join('') : '<div class="empty">Aucune dépense ce mois dans cette catégorie.</div>'}</div>
+    <div class="row between" style="margin-top:10px;font-weight:800;font-size:1.05rem"><span>Total ${escape(cat)}</span><span style="color:var(--red)">${fmtDH(total)}</span></div>
+    <div class="modal-actions"><button class="btn" id="ok">Fermer</button></div>`;
+  const bg = modal('Détail — ' + cat, body);
+  $('#ok', bg).onclick = () => bg.remove();
 }
 function recurRow(f, kind) {
   return `<div class="item"><span class="ic">${kind === 'incomes' ? '💵' : '🧾'}</span>
@@ -336,29 +353,13 @@ function taskModal(date) {
 }
 
 /* ============================================================
-   FAMILLE  (enfants + maman)
+   FAMILLE  (enfants)
    ============================================================ */
 function renderFamille(v) {
   v.append(el(`<div><h1>👨‍👩‍👧 Famille</h1>
-    <div class="section-title">Enfants — sorties & éducation</div>
+    <div class="hint">Enfants : sorties, devoirs, activités. (Maman a son propre espace 👵 dans la barre du bas.)</div>
     <div id="kids"></div>
     <button class="btn ghost block sm" id="addKid" style="margin-bottom:8px">+ Ajouter un enfant</button>
-
-    <div class="section-title">👵 Maman (Alzheimer)</div>
-    <div class="card">
-      <div class="row between"><h3 style="margin:0">💊 Médicaments</h3><button class="btn ghost sm" id="addMed">+ Médicament</button></div>
-      <div id="meds"></div>
-    </div>
-    <div class="card">
-      <h3>📄 Dossier CNSS</h3>
-      <div id="cnss"></div>
-      <button class="btn ghost sm" id="addCnss" style="margin-top:8px">+ Étape</button>
-    </div>
-    <div class="card">
-      <h3>📝 Notes / budget maman</h3>
-      <textarea id="mNotes" placeholder="Revenu garage, dépenses médicaments...">${escape(DB.mother.notes)}</textarea>
-      <button class="btn sm" id="saveNotes" style="margin-top:8px">Enregistrer</button>
-    </div>
   </div>`));
 
   // Kids
@@ -385,8 +386,68 @@ function renderFamille(v) {
     kc.append(card);
   });
   $('#addKid', v).onclick = () => { DB.kids.push({ id: uid(), name: 'Nouvel enfant', notes: '', items: [] }); save(); router(); };
+}
 
-  // Meds
+/* ============================================================
+   MAMAN  (carnet de caisse : rentrées / sorties + médic. + CNSS)
+   ============================================================ */
+const MAMAN_CATS = { revenu: ['Loyer garage', 'Aide', 'Autre'], depense: ['Médicaments', 'Santé', 'Dons', 'Autre'] };
+function renderMaman(v) {
+  const m = monthOf(todayISO());
+  const all = DB.transactions.filter(t => t.account === 'Maman').sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  const ins = all.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
+  const outs = all.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
+  const opening = +DB.mother.opening || 0;
+  const solde = opening + ins - outs;
+  const mt = all.filter(t => monthOf(t.date) === m);
+  const mIn = mt.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
+  const mOut = mt.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
+
+  v.append(el(`<div><h1>👵 Maman</h1>
+    <div class="hint">Le carnet de la caisse de maman : chaque montant qui <b>rentre</b> (loyer garage…) et qui <b>sort</b> (médicaments, dons…). Le solde reste toujours visible.</div>
+    <div class="card">
+      <div class="row between"><span style="color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.4px;font-weight:700">Solde de la caisse</span>
+        <button class="btn gray sm" id="editOpen">Solde de départ</button></div>
+      <div class="value ${solde >= 0 ? 'pos' : 'neg'}" style="font-size:1.9rem;font-weight:800;margin-top:4px">${fmtDH(solde)}</div>
+    </div>
+    <div class="grid2">
+      <div class="stat"><div class="label">Entré ce mois</div><div class="value pos">${fmtDH(mIn)}</div></div>
+      <div class="stat"><div class="label">Sorti ce mois</div><div class="value neg">${fmtDH(mOut)}</div></div>
+    </div>
+
+    <div class="section-title">Carnet — rentrées & sorties</div>
+    <div class="card" id="ledger">
+      ${all.length ? all.map(txRow).join('') : '<div class="empty">Aucun mouvement. Touche ＋ en bas pour ajouter une rentrée ou une sortie.</div>'}
+    </div>
+
+    <div class="section-title">💊 Médicaments (posologie)</div>
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">Liste</h3><button class="btn ghost sm" id="addMed">+ Médicament</button></div>
+      <div id="meds"></div>
+    </div>
+
+    <div class="section-title">📄 Dossier CNSS</div>
+    <div class="card">
+      <div id="cnss"></div>
+      <button class="btn ghost sm" id="addCnss" style="margin-top:8px">+ Étape</button>
+    </div>
+
+    <div class="card">
+      <h3>📝 Notes</h3>
+      <textarea id="mNotes" placeholder="ex: garage loué, pharmacie habituelle, médecin…">${escape(DB.mother.notes)}</textarea>
+      <button class="btn sm" id="saveNotes" style="margin-top:8px">Enregistrer</button>
+    </div>
+    <button class="btn fab" id="fab">＋</button>
+  </div>`));
+
+  $('#fab', v).onclick = () => mamanOpModal();
+  $('#editOpen', v).onclick = () => {
+    const bg = modal('Solde de départ', `<p><small>Argent déjà présent dans la caisse de maman avant de commencer le suivi.</small></p>${field('Montant (DH)', `<input id="o_v" type="number" inputmode="decimal" value="${opening || ''}">`)}<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
+    $('#ok', bg).onclick = () => { DB.mother.opening = +$('#o_v', bg).value || 0; save(); bg.remove(); router(); };
+  };
+  v.querySelectorAll('[data-del-tx]').forEach(b => b.onclick = () => { DB.transactions = DB.transactions.filter(t => t.id !== b.dataset.delTx); save(); router(); });
+
+  // Médicaments
   const mc = $('#meds', v);
   if (!DB.mother.meds.length) mc.append(el('<small>Aucun médicament enregistré.</small>'));
   DB.mother.meds.forEach(med => {
@@ -409,6 +470,28 @@ function renderFamille(v) {
   });
   $('#addCnss', v).onclick = () => { const t = prompt('Nouvelle étape du dossier :'); if (t) { DB.mother.cnss.push({ id: uid(), label: t, done: false }); save(); router(); } };
   $('#saveNotes', v).onclick = () => { DB.mother.notes = $('#mNotes', v).value; save(); $('#saveNotes', v).textContent = 'Enregistré ✓'; };
+}
+function mamanOpModal() {
+  let type = 'depense';
+  const body = `
+    <div class="seg" id="segType"><button data-t="depense" class="active">－ Sortie</button><button data-t="revenu">＋ Rentrée</button></div>
+    ${field('Montant (DH)', '<input id="f_amt" type="number" inputmode="decimal" placeholder="0" autofocus>')}
+    ${field('Motif', `<select id="f_cat">${options(MAMAN_CATS.depense)}</select>`)}
+    ${field('Date', `<input id="f_date" type="date" value="${todayISO()}">`)}
+    ${field('Note (optionnel)', '<input id="f_note" placeholder="ex: pharmacie, garage…">')}
+    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`;
+  const bg = modal('Mouvement — caisse maman', body);
+  bg.querySelectorAll('#segType button').forEach(b => b.onclick = () => {
+    bg.querySelectorAll('#segType button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active'); type = b.dataset.t; $('#f_cat', bg).innerHTML = options(MAMAN_CATS[type]);
+  });
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => {
+    const amount = +$('#f_amt', bg).value;
+    if (!amount) { $('#f_amt', bg).focus(); return; }
+    DB.transactions.push({ id: uid(), type, amount, account: 'Maman', cat: $('#f_cat', bg).value, date: $('#f_date', bg).value, note: $('#f_note', bg).value.trim() });
+    save(); bg.remove(); router();
+  };
 }
 
 /* ============================================================
