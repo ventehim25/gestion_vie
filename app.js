@@ -101,7 +101,47 @@ function migrate(d) {
   return out;
 }
 function persist(d = DB) { localStorage.setItem(KEY, JSON.stringify(d)); }
-function save() { persist(); }
+function save() { DB.updatedAt = Date.now(); persist(); scheduleGhPush(); }
+
+/* ---------- Sauvegarde GitHub (Gist privé) ---------- */
+const SYNC_KEY = 'gestion_vie_sync';
+const GIST_FILE = 'gestion-vie-data.json';
+let SYNC = loadSync();
+function loadSync() { try { return JSON.parse(localStorage.getItem(SYNC_KEY)) || {}; } catch (e) { return {}; } }
+function saveSync() { localStorage.setItem(SYNC_KEY, JSON.stringify(SYNC)); }
+function ghHeaders() { return { 'Authorization': 'token ' + SYNC.token, 'Accept': 'application/vnd.github+json', 'Content-Type': 'application/json' }; }
+async function ghCreateGist() {
+  const res = await fetch('https://api.github.com/gists', { method: 'POST', headers: ghHeaders(), body: JSON.stringify({ description: 'Données Gestion de Vie (privé)', public: false, files: { [GIST_FILE]: { content: JSON.stringify(DB) } } }) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return (await res.json()).id;
+}
+async function ghPush() {
+  if (!SYNC.token || !SYNC.gistId) return;
+  const res = await fetch('https://api.github.com/gists/' + SYNC.gistId, { method: 'PATCH', headers: ghHeaders(), body: JSON.stringify({ files: { [GIST_FILE]: { content: JSON.stringify(DB) } } }) });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  SYNC.lastSync = Date.now(); saveSync();
+}
+async function ghPull() {
+  if (!SYNC.token || !SYNC.gistId) return null;
+  const res = await fetch('https://api.github.com/gists/' + SYNC.gistId, { headers: ghHeaders() });
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const j = await res.json();
+  const f = j.files && j.files[GIST_FILE];
+  return f ? JSON.parse(f.content) : null;
+}
+let pushTimer = null;
+function scheduleGhPush() {
+  if (!SYNC.enabled) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(() => { ghPush().catch(() => {}); }, 2500);
+}
+async function syncOnLoad() {
+  if (!SYNC.enabled || !SYNC.token || !SYNC.gistId) return;
+  try {
+    const remote = await ghPull();
+    if (remote && (remote.updatedAt || 0) > (DB.updatedAt || 0)) { DB = migrate(remote); persist(); router(); }
+  } catch (e) {}
+}
 
 /* ---------- Calculs budget (caisse Maman exclue : elle a son propre onglet) ---------- */
 const isOwn = (x) => x.account !== 'Maman';
@@ -940,8 +980,24 @@ function renderReglages(v) {
     </div>
 
     <div class="card">
-      <h3>💾 Sauvegarde</h3>
-      <p><small>Tes données restent sur cet appareil. Exporte un fichier pour les sauvegarder ou les transférer entre téléphone et ordinateur.</small></p>
+      <h3>☁️ Sauvegarde GitHub (privée, multi-appareils)</h3>
+      ${SYNC.enabled ? `
+        <p><small>✅ <b>Connecté.</b> Tes données sont sauvegardées automatiquement dans un Gist privé et synchronisées entre tes appareils.</small></p>
+        <p><small>Dernière sauvegarde : ${SYNC.lastSync ? new Date(SYNC.lastSync).toLocaleString('fr-FR') : '—'}</small></p>
+        <div class="row" style="gap:8px"><button class="btn" id="ghSave">⬆ Sauvegarder</button><button class="btn ghost" id="ghRestore">⬇ Restaurer</button></div>
+        <button class="btn gray sm" id="ghDisc" style="margin-top:8px">Déconnecter cet appareil</button>
+      ` : `
+        <p><small>Sauvegarde tes données dans un <b>Gist GitHub privé</b> : elles survivent aux réinstallations et se synchronisent entre téléphone et ordinateur. Le jeton n'a besoin que de la permission <b>gist</b> — il ne touche <b>aucun</b> de tes dépôts (ton projet « gestion filtre » reste intact).</small></p>
+        ${field('Jeton GitHub (permission : gist)', '<input id="gh_tok" type="password" placeholder="ghp_…" autocomplete="off">')}
+        ${field('ID du Gist (si tu en as déjà un — sinon laisse vide)', '<input id="gh_gid" placeholder="optionnel" autocomplete="off">')}
+        <button class="btn" id="ghConnect">Connecter</button>
+        <p><small>Créer un jeton : ouvre <b>github.com/settings/tokens</b> → « Generate new token (classic) » → coche uniquement <b>gist</b> → Generate → copie le code <b>ghp_…</b>.</small></p>
+      `}
+    </div>
+
+    <div class="card">
+      <h3>💾 Sauvegarde fichier (hors-ligne)</h3>
+      <p><small>Exporte un fichier pour sauvegarder ou transférer entre appareils sans GitHub.</small></p>
       <div class="row" style="gap:8px"><button class="btn ghost" id="exp">⬇ Exporter</button><button class="btn ghost" id="imp">⬆ Importer</button></div>
       <input id="impFile" type="file" accept="application/json" style="display:none">
     </div>
@@ -985,6 +1041,40 @@ function renderReglages(v) {
     r.readAsText(f);
   };
   $('#reset', v).onclick = () => { if (confirm('Effacer TOUTES les données ? (Exporte d\'abord une sauvegarde !)')) { localStorage.removeItem(KEY); DB = load(); go('/'); } };
+
+  // GitHub sync
+  if (SYNC.enabled) {
+    $('#ghSave', v).onclick = async () => { const b = $('#ghSave', v); b.textContent = '…'; try { await ghPush(); router(); } catch (e) { alert('Erreur : ' + e.message); b.textContent = '⬆ Sauvegarder'; } };
+    $('#ghRestore', v).onclick = async () => {
+      if (!confirm('Remplacer les données de cet appareil par celles de GitHub ?')) return;
+      try { const r = await ghPull(); if (r) { DB = migrate(r); persist(); alert('Restauré depuis GitHub ✓'); go('/'); } else alert('Aucune donnée trouvée dans le Gist.'); } catch (e) { alert('Erreur : ' + e.message); }
+    };
+    $('#ghDisc', v).onclick = () => { if (confirm('Déconnecter GitHub ? Les données restent sur cet appareil.')) { SYNC = {}; saveSync(); router(); } };
+  } else {
+    $('#ghConnect', v).onclick = async () => {
+      const tok = $('#gh_tok', v).value.trim(); if (!tok) { alert('Colle ton jeton GitHub (ghp_…).'); return; }
+      const gid = $('#gh_gid', v).value.trim();
+      const btn = $('#ghConnect', v); btn.textContent = 'Connexion…'; btn.disabled = true;
+      SYNC.token = tok;
+      try {
+        if (gid) {
+          SYNC.gistId = gid; SYNC.enabled = true; saveSync();
+          const r = await ghPull();
+          if (r) { DB = migrate(r); persist(); }
+          alert('Connecté ✓ Tes données ont été chargées depuis GitHub.');
+        } else {
+          const id = await ghCreateGist();
+          SYNC.gistId = id; SYNC.enabled = true; SYNC.lastSync = Date.now(); saveSync();
+          alert('Connecté ✓ Un Gist privé a été créé pour tes données.');
+        }
+        go('/');
+      } catch (e) {
+        SYNC.enabled = false; saveSync();
+        alert('Échec : ' + e.message + '\nVérifie le jeton (permission « gist ») et ta connexion internet.');
+        btn.textContent = 'Connecter'; btn.disabled = false;
+      }
+    };
+  }
 }
 
 /* ============================================================
@@ -1014,3 +1104,4 @@ function scheduleReminder() {
 $('#todayDate').textContent = new Date().toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'long' });
 router();
 scheduleReminder();
+syncOnLoad();
