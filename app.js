@@ -25,8 +25,8 @@ function seed() {
   const today = todayISO();
   return {
     version: 1,
-    profile: { name: '', ville: 'Kénitra' },
-    capital: 300000,
+    profile: { name: '', ville: '' },
+    capital: 0,
     transactions: [],
     fixed: [
       { id: uid(), label: 'Assurance voiture', amount: 0, account: 'Moi', cat: 'Assurance' },
@@ -35,8 +35,8 @@ function seed() {
       { id: uid(), label: 'Médicaments maman', amount: 0, account: 'Maman', cat: 'Médicaments' },
     ],
     incomes: [
-      { id: uid(), label: 'Distribution filtres', amount: 7000, account: 'Business', cat: 'Filtres' },
-      { id: uid(), label: 'Loyer garage (maman)', amount: 1900, account: 'Maman', cat: 'Loyer garage' },
+      { id: uid(), label: 'Distribution filtres', amount: 0, account: 'Business', cat: 'Filtres' },
+      { id: uid(), label: 'Loyer garage (maman)', amount: 0, account: 'Maman', cat: 'Loyer garage' },
     ],
     tasks: [],
     spiritual: { prayers: {}, quran: [], sadaqa: [] },
@@ -52,15 +52,15 @@ function seed() {
         { id: uid(), label: 'Certificat médical (Alzheimer)', done: false },
         { id: uid(), label: 'Déposer le dossier à la CNSS', done: false },
       ],
-      notes: 'Garage loué 1 900 DH/mois. Revenu réservé à ses médicaments.',
+      notes: '',
     },
     projects: [
-      { id: uid(), title: 'Appartement pour habiter', type: 'Logement', cost: 600000, priority: 1, status: 'reflexion',
-        pros: ['Sécurité de la famille', 'Stabilité', 'Quitter la maison de la sœur'], cons: ['Bloque du capital', 'Mensualités'], notes: '' },
-      { id: uid(), title: 'Garage locatif (revenu passif)', type: 'Investissement', cost: 250000, priority: 2, status: 'reflexion',
-        pros: ['Revenu mensuel régulier', 'Modèle déjà prouvé (garage de maman)'], cons: ['Ne règle pas le logement'], notes: '' },
-      { id: uid(), title: 'Agriculture + moutons (Chichaoua)', type: 'Investissement', cost: 150000, priority: 3, status: 'en_attente',
-        pros: ['Terres déjà possédées (oliviers)', 'Potentiel élevage moutons'], cons: ['Trop loin de Kénitra', 'Non sécurisé (risque de vols)', 'Demande ma présence'], notes: 'À reporter ou faire avec un associé de confiance sur place.' },
+      { id: uid(), title: 'Appartement pour habiter', type: 'Logement', cost: 0, priority: 1, status: 'reflexion',
+        pros: ['Sécurité de la famille', 'Stabilité'], cons: ['Bloque du capital', 'Mensualités'], notes: '' },
+      { id: uid(), title: 'Garage locatif (revenu passif)', type: 'Investissement', cost: 0, priority: 2, status: 'reflexion',
+        pros: ['Revenu mensuel régulier', 'Modèle déjà prouvé'], cons: ['Ne règle pas le logement'], notes: '' },
+      { id: uid(), title: 'Agriculture + élevage', type: 'Investissement', cost: 0, priority: 3, status: 'en_attente',
+        pros: ['Terres déjà possédées', 'Potentiel élevage'], cons: ['Éloignement', 'Sécurité du terrain', 'Demande ma présence'], notes: '' },
     ],
   };
 }
