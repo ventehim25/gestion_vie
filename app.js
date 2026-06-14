@@ -54,6 +54,10 @@ function seed() {
       ],
       notes: '',
     },
+    farm: {
+      opening: { perso: 0, partage: 0 },
+      tx: [],
+    },
     projects: [
       { id: uid(), title: 'Appartement pour habiter', type: 'Logement', cost: 0, priority: 1, status: 'reflexion',
         pros: ['Sécurité de la famille', 'Stabilité'], cons: ['Bloque du capital', 'Mensualités'], notes: '' },
@@ -95,7 +99,7 @@ function todayTotals() {
    ============================================================ */
 const routes = {
   '/': renderHome, 'budget': renderBudget, 'planning': renderPlanning,
-  'famille': renderFamille, 'maman': renderMaman, 'spirituel': renderSpirituel, 'projets': renderProjets,
+  'famille': renderFamille, 'maman': renderMaman, 'ferme': renderFerme, 'spirituel': renderSpirituel, 'projets': renderProjets,
   'reglages': renderReglages,
 };
 function currentRoute() { return (location.hash.replace(/^#\//, '') || '/'); }
@@ -490,6 +494,96 @@ function mamanOpModal() {
     const amount = +$('#f_amt', bg).value;
     if (!amount) { $('#f_amt', bg).focus(); return; }
     DB.transactions.push({ id: uid(), type, amount, account: 'Maman', cat: $('#f_cat', bg).value, date: $('#f_date', bg).value, note: $('#f_note', bg).value.trim() });
+    save(); bg.remove(); router();
+  };
+}
+
+/* ============================================================
+   FERME  (dépenses agricoles, 2 caisses : perso / moi & grand-mère)
+   ============================================================ */
+const FARM_CAISSES = { perso: 'Dépenses personnelles', partage: 'Moi & Grand-mère' };
+const FARM_CATS = {
+  depense: ['Semences', 'Irrigation / Eau', 'Engrais', 'Main d’œuvre', 'Moutons / Animaux', 'Gardiennage', 'Transport', 'Outils', 'Oliviers', 'Autre'],
+  revenu: ['Vente olives', 'Vente moutons', 'Vente récolte', 'Autre'],
+};
+let farmFilter = 'all';
+function caisseSums(c) {
+  const open = +DB.farm.opening[c] || 0;
+  const list = DB.farm.tx.filter(t => t.caisse === c);
+  const ins = list.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
+  const outs = list.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
+  return { solde: open + ins - outs, outs, ins, open };
+}
+function farmRow(t) {
+  return `<div class="item"><span class="ic">${t.type === 'revenu' ? '＋' : '－'}</span>
+    <span class="grow"><div class="t">${escape(t.cat)}${t.note ? ' · ' + escape(t.note) : ''}</div>
+    <div class="s">${t.date} · <span class="chip ${t.caisse === 'perso' ? 'moi' : 'maman'}">${FARM_CAISSES[t.caisse]}</span></div></span>
+    <b class="amt ${t.type === 'revenu' ? 'pos' : 'neg'}">${t.type === 'revenu' ? '+' : '-'}${fmtDH(t.amount)}</b>
+    <button class="btn gray sm" data-del-farm="${t.id}">✕</button></div>`;
+}
+function renderFerme(v) {
+  const sP = caisseSums('perso'), sG = caisseSums('partage');
+  const m = monthOf(todayISO());
+  const monthOut = DB.farm.tx.filter(t => t.type === 'depense' && monthOf(t.date) === m).reduce((a, t) => a + (+t.amount || 0), 0);
+  let list = DB.farm.tx.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
+  if (farmFilter !== 'all') list = list.filter(t => t.caisse === farmFilter);
+
+  v.append(el(`<div><h1>🚜 Ferme</h1>
+    <div class="hint">Suivi des dépenses de la ferme (oliviers, moutons…), réparties en <b>2 caisses</b>. Chaque caisse garde son solde propre.</div>
+
+    <div class="grid2">
+      <div class="card" style="margin:0">
+        <div class="row between"><span style="font-size:.72rem;color:var(--muted);text-transform:uppercase;font-weight:700">Personnelle</span><button class="btn gray sm" data-open="perso">solde départ</button></div>
+        <div class="value ${sP.solde >= 0 ? 'teal' : 'neg'}" style="font-size:1.4rem;font-weight:800;margin-top:4px">${fmtDH(sP.solde)}</div>
+      </div>
+      <div class="card" style="margin:0">
+        <div class="row between"><span style="font-size:.72rem;color:var(--muted);text-transform:uppercase;font-weight:700">Moi & Grand-mère</span><button class="btn gray sm" data-open="partage">solde départ</button></div>
+        <div class="value ${sG.solde >= 0 ? 'teal' : 'neg'}" style="font-size:1.4rem;font-weight:800;margin-top:4px">${fmtDH(sG.solde)}</div>
+      </div>
+    </div>
+    <div class="stat" style="margin-top:12px"><div class="label">Total dépensé ce mois (ferme)</div><div class="value neg">${fmtDH(monthOut)}</div></div>
+
+    <div class="section-title">Mouvements</div>
+    <div class="seg" id="farmFilter" style="margin-bottom:10px">
+      <button data-f="all" class="${farmFilter === 'all' ? 'active' : ''}">Tout</button>
+      <button data-f="perso" class="${farmFilter === 'perso' ? 'active' : ''}">Perso</button>
+      <button data-f="partage" class="${farmFilter === 'partage' ? 'active' : ''}">Moi & GM</button>
+    </div>
+    <div class="card" id="farmLedger">
+      ${list.length ? list.map(farmRow).join('') : '<div class="empty">Aucun mouvement. Touche ＋ pour ajouter une dépense ou une rentrée.</div>'}
+    </div>
+    <button class="btn fab" id="fab">＋</button>
+  </div>`));
+
+  $('#fab', v).onclick = () => farmOpModal();
+  v.querySelectorAll('#farmFilter button').forEach(b => b.onclick = () => { farmFilter = b.dataset.f; router(); });
+  v.querySelectorAll('[data-del-farm]').forEach(b => b.onclick = () => { DB.farm.tx = DB.farm.tx.filter(t => t.id !== b.dataset.delFarm); save(); router(); });
+  v.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
+    const c = b.dataset.open;
+    const bg = modal('Solde de départ — ' + FARM_CAISSES[c], `<p><small>Argent déjà présent dans cette caisse avant le suivi.</small></p>${field('Montant (DH)', `<input id="o_v" type="number" inputmode="decimal" value="${DB.farm.opening[c] || ''}">`)}<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
+    $('#ok', bg).onclick = () => { DB.farm.opening[c] = +$('#o_v', bg).value || 0; save(); bg.remove(); router(); };
+  });
+}
+function farmOpModal() {
+  let type = 'depense';
+  const body = `
+    <div class="seg" id="segType"><button data-t="depense" class="active">－ Dépense</button><button data-t="revenu">＋ Rentrée</button></div>
+    ${field('Caisse', `<select id="f_caisse">${Object.entries(FARM_CAISSES).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>`)}
+    ${field('Montant (DH)', '<input id="f_amt" type="number" inputmode="decimal" placeholder="0" autofocus>')}
+    ${field('Motif', `<select id="f_cat">${options(FARM_CATS.depense)}</select>`)}
+    ${field('Date', `<input id="f_date" type="date" value="${todayISO()}">`)}
+    ${field('Note (optionnel)', '<input id="f_note" placeholder="ex: achat 5 moutons">')}
+    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`;
+  const bg = modal('Mouvement — ferme', body);
+  bg.querySelectorAll('#segType button').forEach(b => b.onclick = () => {
+    bg.querySelectorAll('#segType button').forEach(x => x.classList.remove('active'));
+    b.classList.add('active'); type = b.dataset.t; $('#f_cat', bg).innerHTML = options(FARM_CATS[type]);
+  });
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => {
+    const amount = +$('#f_amt', bg).value;
+    if (!amount) { $('#f_amt', bg).focus(); return; }
+    DB.farm.tx.push({ id: uid(), type, amount, caisse: $('#f_caisse', bg).value, cat: $('#f_cat', bg).value, date: $('#f_date', bg).value, note: $('#f_note', bg).value.trim() });
     save(); bg.remove(); router();
   };
 }
