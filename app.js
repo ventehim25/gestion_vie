@@ -15,6 +15,7 @@ const escape = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '
 
 const PRAYERS = ['Fajr', 'Dohr', 'Asr', 'Maghrib', 'Icha'];
 const ACCOUNTS = ['Moi', 'Maman', 'Business'];
+const OWN_ACCOUNTS = ['Moi', 'Business']; // caisse Maman exclue du Budget (onglet dédié)
 const CATS = {
   depense: ['Nourriture', 'Loyer', 'Assurance', 'Carburant', 'Voiture', 'Enfants', 'Santé', 'Médicaments', 'Factures', 'Sadaqa', 'Marchandise', 'Autre'],
   revenu: ['Filtres', 'Loyer garage', 'Salaire', 'Vente', 'Autre'],
@@ -102,20 +103,21 @@ function migrate(d) {
 function persist(d = DB) { localStorage.setItem(KEY, JSON.stringify(d)); }
 function save() { persist(); }
 
-/* ---------- Calculs budget ---------- */
+/* ---------- Calculs budget (caisse Maman exclue : elle a son propre onglet) ---------- */
+const isOwn = (x) => x.account !== 'Maman';
 function savingsTotal() { return DB.savings.log.reduce((a, e) => a + (+e.amount || 0), 0); }
 function debtsTotal() { return DB.debts.filter(d => !d.paid).reduce((a, d) => a + (+d.amount || 0), 0); }
 function monthTx(month = monthOf(todayISO())) { return DB.transactions.filter(t => monthOf(t.date) === month); }
-function sumFixed() { return DB.fixed.reduce((a, f) => a + (+f.amount || 0), 0); }
-function sumIncomes() { return DB.incomes.reduce((a, f) => a + (+f.amount || 0), 0); }
+function sumFixed() { return DB.fixed.filter(isOwn).reduce((a, f) => a + (+f.amount || 0), 0); }
+function sumIncomes() { return DB.incomes.filter(isOwn).reduce((a, f) => a + (+f.amount || 0), 0); }
 function monthTotals(month) {
-  const tx = monthTx(month);
+  const tx = monthTx(month).filter(isOwn);
   const dep = tx.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
   const rev = tx.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
   return { dep, rev, net: rev - dep };
 }
 function todayTotals() {
-  const t = DB.transactions.filter(t => t.date === todayISO());
+  const t = DB.transactions.filter(t => t.date === todayISO() && isOwn(t));
   return { dep: t.filter(x => x.type === 'depense').reduce((a, x) => a + (+x.amount || 0), 0) };
 }
 
@@ -246,11 +248,11 @@ function renderHome(v) {
 }
 
 /* ============================================================
-   BUDGET  (3 caisses : Moi / Maman / Business)
+   BUDGET  (ma caisse : Moi / Business — Maman a son propre onglet)
    ============================================================ */
 function renderBudget(v) {
   const m = monthOf(todayISO());
-  const tx = monthTx(m).sort((a, b) => b.date.localeCompare(a.date));
+  const tx = monthTx(m).filter(isOwn).sort((a, b) => b.date.localeCompare(a.date));
   const tot = monthTotals(m);
 
   const byCat = {};
@@ -276,10 +278,10 @@ function renderBudget(v) {
     <div class="section-title">Charges fixes & revenus récurrents</div>
     <div class="card">
       <div class="row between"><span><b>Revenus</b> récurrents</span><b class="amt pos">${fmtDH(sumIncomes())}</b></div>
-      ${DB.incomes.map(f => recurRow(f, 'incomes')).join('') || '<small>Aucun</small>'}
+      ${DB.incomes.filter(isOwn).map(f => recurRow(f, 'incomes')).join('') || '<small>Aucun</small>'}
       <div class="divider"></div>
       <div class="row between"><span><b>Charges</b> fixes</span><b class="amt neg">${fmtDH(sumFixed())}</b></div>
-      ${DB.fixed.map(f => recurRow(f, 'fixed')).join('') || '<small>Aucune</small>'}
+      ${DB.fixed.filter(isOwn).map(f => recurRow(f, 'fixed')).join('') || '<small>Aucune</small>'}
       <div class="row" style="gap:8px;margin-top:10px">
         <button class="btn ghost sm" id="addInc">+ Revenu</button>
         <button class="btn ghost sm" id="addFix">+ Charge fixe</button>
@@ -328,7 +330,7 @@ function renderBudget(v) {
 }
 function catDetailModal(cat) {
   const m = monthOf(todayISO());
-  const list = DB.transactions.filter(t => t.type === 'depense' && t.cat === cat && monthOf(t.date) === m);
+  const list = DB.transactions.filter(t => t.type === 'depense' && t.cat === cat && monthOf(t.date) === m && isOwn(t));
   const groups = {};
   list.forEach(t => { const k = t.note ? t.note : '(sans détail)'; groups[k] = (groups[k] || 0) + (+t.amount || 0); });
   const rows = Object.entries(groups).sort((a, b) => b[1] - a[1]);
@@ -359,7 +361,7 @@ function txModal() {
   const body = `
     <div class="seg" id="segType"><button data-t="depense" class="active">－ Dépense</button><button data-t="revenu">＋ Revenu</button></div>
     ${field('Montant (DH)', '<input id="f_amt" type="number" inputmode="decimal" placeholder="0" autofocus>')}
-    ${field('Caisse', `<select id="f_acc">${options(ACCOUNTS, 'Moi')}</select>`)}
+    ${field('Caisse', `<select id="f_acc">${options(OWN_ACCOUNTS, 'Moi')}</select>`)}
     ${field('Catégorie', `<select id="f_cat">${options(CATS.depense)}</select>`)}
     ${field('Date', `<input id="f_date" type="date" value="${todayISO()}">`)}
     ${field('Note (optionnel)', '<input id="f_note" placeholder="ex: courses Marjane">')}
@@ -378,14 +380,17 @@ function txModal() {
     save(); bg.remove(); router();
   };
 }
-function recurModal(kind, id) {
+function recurModal(kind, id, accList) {
+  accList = accList || OWN_ACCOUNTS;
   const list = DB[kind];
-  const cur = id ? list.find(x => x.id === id) : { label: '', amount: 0, account: kind === 'incomes' ? 'Business' : 'Moi', cat: '' };
+  const defAcc = kind === 'incomes' ? (accList.includes('Business') ? 'Business' : accList[0]) : accList[0];
+  const cur = id ? list.find(x => x.id === id) : { label: '', amount: 0, account: defAcc, cat: '' };
   const catList = kind === 'incomes' ? CATS.revenu : CATS.depense;
+  const accChoices = accList.includes(cur.account) ? accList : [cur.account, ...accList];
   const body = `
     ${field('Libellé', `<input id="r_lab" value="${escape(cur.label)}" placeholder="ex: Assurance voiture">`)}
     ${field('Montant / mois (DH)', `<input id="r_amt" type="number" inputmode="decimal" value="${cur.amount || ''}">`)}
-    ${field('Caisse', `<select id="r_acc">${options(ACCOUNTS, cur.account)}</select>`)}
+    ${field('Caisse', `<select id="r_acc">${options(accChoices, cur.account)}</select>`)}
     ${field('Catégorie', `<select id="r_cat">${options(catList, cur.cat)}</select>`)}
     <div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : ''}<button class="btn" id="ok">Enregistrer</button></div>`;
   const bg = modal(kind === 'incomes' ? 'Revenu récurrent' : 'Charge fixe', body);
@@ -498,6 +503,10 @@ function renderMaman(v) {
   const mt = all.filter(t => monthOf(t.date) === m);
   const mIn = mt.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
   const mOut = mt.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
+  const mInc = DB.incomes.filter(t => t.account === 'Maman');
+  const mFix = DB.fixed.filter(t => t.account === 'Maman');
+  const mIncSum = mInc.reduce((a, f) => a + (+f.amount || 0), 0);
+  const mFixSum = mFix.reduce((a, f) => a + (+f.amount || 0), 0);
 
   v.append(el(`<div><h1>👵 Maman</h1>
     <div class="hint">Le carnet de la caisse de maman : chaque montant qui <b>rentre</b> (loyer garage…) et qui <b>sort</b> (médicaments, dons…). Le solde reste toujours visible.</div>
@@ -509,6 +518,19 @@ function renderMaman(v) {
     <div class="grid2">
       <div class="stat"><div class="label">Entré ce mois</div><div class="value pos">${fmtDH(mIn)}</div></div>
       <div class="stat"><div class="label">Sorti ce mois</div><div class="value neg">${fmtDH(mOut)}</div></div>
+    </div>
+
+    <div class="section-title">Revenus & charges récurrents (par mois)</div>
+    <div class="card">
+      <div class="row between"><span><b>Revenus</b> (ex: loyer garage)</span><b class="amt pos">${fmtDH(mIncSum)}</b></div>
+      ${mInc.map(f => recurRow(f, 'incomes')).join('') || '<small>Aucun</small>'}
+      <div class="divider"></div>
+      <div class="row between"><span><b>Charges</b> (ex: médicaments)</span><b class="amt neg">${fmtDH(mFixSum)}</b></div>
+      ${mFix.map(f => recurRow(f, 'fixed')).join('') || '<small>Aucune</small>'}
+      <div class="row" style="gap:8px;margin-top:10px">
+        <button class="btn ghost sm" id="mAddInc">+ Revenu</button>
+        <button class="btn ghost sm" id="mAddFix">+ Charge</button>
+      </div>
     </div>
 
     <div class="section-title">Carnet — rentrées & sorties</div>
@@ -542,6 +564,9 @@ function renderMaman(v) {
     $('#ok', bg).onclick = () => { DB.mother.opening = +$('#o_v', bg).value || 0; save(); bg.remove(); router(); };
   };
   v.querySelectorAll('[data-del-tx]').forEach(b => b.onclick = () => { DB.transactions = DB.transactions.filter(t => t.id !== b.dataset.delTx); save(); router(); });
+  $('#mAddInc', v).onclick = () => recurModal('incomes', null, ['Maman']);
+  $('#mAddFix', v).onclick = () => recurModal('fixed', null, ['Maman']);
+  v.querySelectorAll('[data-edit-recur]').forEach(b => b.onclick = () => recurModal(b.dataset.kind, b.dataset.editRecur, ['Maman']));
 
   // Médicaments
   const mc = $('#meds', v);
