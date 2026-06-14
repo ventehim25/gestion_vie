@@ -427,9 +427,10 @@ function renderPlanning(v) {
     list.forEach(t => {
       const it = el(`<div class="item"><span class="check ${t.done ? 'on' : ''}">${t.done ? '✓' : ''}</span>
         <span class="ic">${CATICON[t.cat] || '•'}</span>
-        <span class="grow"><div class="t" style="${t.done ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(t.title)}</div></span>
+        <span class="grow" data-edit style="cursor:pointer"><div class="t" style="${t.done ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(t.title)}</div><div class="s">${escape(t.cat)} · ✎ modifier</div></span>
         <button class="btn gray sm" data-del="${t.id}">✕</button></div>`);
       $('.check', it).onclick = () => { t.done = !t.done; save(); router(); };
+      $('[data-edit]', it).onclick = () => taskModal(t.date, t.id);
       $('[data-del]', it).onclick = () => { DB.tasks = DB.tasks.filter(x => x.id !== t.id); save(); router(); };
       lc.append(it);
     });
@@ -437,18 +438,21 @@ function renderPlanning(v) {
   });
   $('#fab', v).onclick = () => taskModal(today);
 }
-function taskModal(date) {
+function taskModal(date, id) {
   const cats = ['Business', 'Famille', 'Maman', 'Perso', 'Religion'];
+  const cur = id ? DB.tasks.find(t => t.id === id) : null;
   const body = `
-    ${field('Tâche', '<input id="t_title" placeholder="ex: Tournée garages Sidi Kacem" autofocus>')}
-    ${field('Catégorie', `<select id="t_cat">${options(cats)}</select>`)}
-    ${field('Date', `<input id="t_date" type="date" value="${date}">`)}
-    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Ajouter</button></div>`;
-  const bg = modal('Nouvelle tâche', body);
-  $('#cancel', bg).onclick = () => bg.remove();
+    ${field('Tâche', `<input id="t_title" value="${cur ? escape(cur.title) : ''}" placeholder="ex: Tournée garages Sidi Kacem" autofocus>`)}
+    ${field('Catégorie', `<select id="t_cat">${options(cats, cur ? cur.cat : 'Business')}</select>`)}
+    ${field('Date', `<input id="t_date" type="date" value="${cur ? cur.date : date}">`)}
+    <div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">${id ? 'Enregistrer' : 'Ajouter'}</button></div>`;
+  const bg = modal(id ? 'Modifier la tâche' : 'Nouvelle tâche', body);
+  if ($('#cancel', bg)) $('#cancel', bg).onclick = () => bg.remove();
+  if (id) $('#del', bg).onclick = () => { DB.tasks = DB.tasks.filter(x => x.id !== id); save(); bg.remove(); router(); };
   $('#ok', bg).onclick = () => {
     const title = $('#t_title', bg).value.trim(); if (!title) return;
-    DB.tasks.push({ id: uid(), title, cat: $('#t_cat', bg).value, date: $('#t_date', bg).value, done: false });
+    const o = { title, cat: $('#t_cat', bg).value, date: $('#t_date', bg).value };
+    if (cur) Object.assign(cur, o); else DB.tasks.push(Object.assign({ id: uid(), done: false }, o));
     save(); bg.remove(); router();
   };
 }
