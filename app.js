@@ -27,6 +27,9 @@ function seed() {
     version: 1,
     profile: { name: '', ville: '' },
     capital: 0,
+    savings: { goal: 20000, log: [] },
+    debts: [],
+    reminder: { enabled: false, time: '20:30' },
     transactions: [],
     fixed: [
       { id: uid(), label: 'Assurance voiture', amount: 0, account: 'Moi', cat: 'Assurance' },
@@ -81,6 +84,10 @@ function migrate(d) {
   const s = seed();
   const out = Object.assign({}, s, d);
   out.profile = Object.assign({}, s.profile, d.profile || {});
+  out.savings = Object.assign({}, s.savings, d.savings || {});
+  if (!Array.isArray(out.savings.log)) out.savings.log = [];
+  out.debts = Array.isArray(d.debts) ? d.debts : s.debts;
+  out.reminder = Object.assign({}, s.reminder, d.reminder || {});
   out.mother = Object.assign({}, s.mother, d.mother || {});
   out.spiritual = Object.assign({}, s.spiritual, d.spiritual || {});
   const df = d.farm || {};
@@ -96,6 +103,8 @@ function persist(d = DB) { localStorage.setItem(KEY, JSON.stringify(d)); }
 function save() { persist(); }
 
 /* ---------- Calculs budget ---------- */
+function savingsTotal() { return DB.savings.log.reduce((a, e) => a + (+e.amount || 0), 0); }
+function debtsTotal() { return DB.debts.filter(d => !d.paid).reduce((a, d) => a + (+d.amount || 0), 0); }
 function monthTx(month = monthOf(todayISO())) { return DB.transactions.filter(t => monthOf(t.date) === month); }
 function sumFixed() { return DB.fixed.reduce((a, f) => a + (+f.amount || 0), 0); }
 function sumIncomes() { return DB.incomes.reduce((a, f) => a + (+f.amount || 0), 0); }
@@ -160,8 +169,14 @@ function renderHome(v) {
   const fPerso = caisseSums('perso').solde;
   const fShare = treeSplit(caisseSums('partage').outs);
   const sheepBen = sheepStats().benefice;
+  const saved = savingsTotal(), goal = +DB.savings.goal || 0;
+  const owed = debtsTotal();
+  const noTxToday = !DB.transactions.some(t => t.date === todayISO());
+  const nowHM = new Date().toTimeString().slice(0, 5);
+  const showReminder = DB.reminder.enabled && noTxToday && nowHM >= DB.reminder.time;
   const caisses = [
     ['💰 Capital (moi)', DB.capital, 'teal'],
+    ['💸 On me doit (impayés)', owed, owed > 0 ? 'teal' : 'pos'],
     ['👵 Caisse Maman', mSolde, mSolde >= 0 ? 'pos' : 'neg'],
     ['🚜 Ferme — perso', fPerso, fPerso >= 0 ? 'pos' : 'neg'],
     ['🫒 Oliviers — ma part', fShare.me, 'neg'],
@@ -171,7 +186,15 @@ function renderHome(v) {
 
   v.append(el(`<div>
     <h1>${hello}</h1>
+    ${showReminder ? `<div class="hint" style="background:#fef3c7;color:#92400e">🌙 N'oublie pas : note tes dépenses du jour (2 min). C'est la règle du soir.</div>` : ''}
     <div class="hint">Astuce : note chaque dépense pendant 30 jours. Tu connaîtras enfin tes vraies charges fixes — et les grandes décisions deviendront claires.</div>
+
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">🎯 Fonds d'urgence</h3><button class="btn ghost sm" id="addSave">+ Mettre de côté</button></div>
+      <div class="row between" style="margin-top:8px"><b style="font-size:1.3rem">${fmtDH(saved)}</b><small>objectif ${fmtDH(goal)}</small></div>
+      <div class="bar"><span style="width:${goal ? Math.min(100, saved / goal * 100) : 0}%"></span></div>
+      <button class="btn gray sm" id="editGoal" style="margin-top:10px">Modifier l'objectif</button>
+    </div>
 
     <div class="grid2">
       <div class="stat"><div class="label">Capital</div><div class="value teal">${fmtDH(DB.capital)}</div></div>
@@ -212,6 +235,14 @@ function renderHome(v) {
   </div>`));
   $('#goPray', v).onclick = () => go('spirituel');
   $('#goTasks', v).onclick = () => go('planning');
+  $('#addSave', v).onclick = () => {
+    const bg = modal('Mettre de côté', `<p><small>« Paie-toi d'abord » : ajoute ce que tu épargnes ce mois.</small></p>${field('Montant (DH)', '<input id="sv_a" type="number" inputmode="decimal" autofocus>')}${field('Note', '<input id="sv_n" placeholder="ex: épargne du mois">')}<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
+    $('#ok', bg).onclick = () => { const a = +$('#sv_a', bg).value; if (!a) return; DB.savings.log.push({ id: uid(), date: todayISO(), amount: a, note: $('#sv_n', bg).value.trim() }); save(); bg.remove(); router(); };
+  };
+  $('#editGoal', v).onclick = () => {
+    const bg = modal('Objectif d\'épargne', `<p><small>Vise 3 à 6 mois de charges (fonds d'urgence).</small></p>${field('Objectif (DH)', `<input id="g_v" type="number" inputmode="decimal" value="${goal || ''}">`)}<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
+    $('#ok', bg).onclick = () => { DB.savings.goal = +$('#g_v', bg).value || 0; save(); bg.remove(); router(); };
+  };
 }
 
 /* ============================================================
@@ -233,6 +264,13 @@ function renderBudget(v) {
       <div class="stat"><div class="label">Entrées</div><div class="value pos">${fmtDH(tot.rev)}</div></div>
       <div class="stat"><div class="label">Sorties</div><div class="value neg">${fmtDH(tot.dep)}</div></div>
       <div class="stat"><div class="label">Net</div><div class="value ${tot.net >= 0 ? 'pos' : 'neg'}">${fmtDH(tot.net)}</div></div>
+    </div>
+
+    <div class="section-title">💸 Qui me doit de l'argent (impayés)</div>
+    <div class="card">
+      <div class="row between"><span><b>Total à récupérer</b></span><b class="amt pos">${fmtDH(debtsTotal())}</b></div>
+      <div id="debtList" style="margin-top:6px"></div>
+      <button class="btn ghost sm" id="addDebt" style="margin-top:8px">+ Ajouter un impayé</button>
     </div>
 
     <div class="section-title">Charges fixes & revenus récurrents</div>
@@ -267,6 +305,26 @@ function renderBudget(v) {
   v.querySelectorAll('[data-del-tx]').forEach(b => b.onclick = () => { DB.transactions = DB.transactions.filter(t => t.id !== b.dataset.delTx); save(); router(); });
   v.querySelectorAll('[data-edit-recur]').forEach(b => b.onclick = () => recurModal(b.dataset.kind, b.dataset.editRecur));
   v.querySelectorAll('[data-catrow]').forEach(r => r.onclick = () => catDetailModal(r.dataset.catrow));
+
+  // Impayés
+  const dl = $('#debtList', v);
+  const unpaid = DB.debts.filter(d => !d.paid).sort((a, b) => (b.amount || 0) - (a.amount || 0));
+  if (!unpaid.length) dl.append(el('<small>Personne ne te doit d\'argent. 👍</small>'));
+  unpaid.forEach(d => {
+    const row = el(`<div class="item"><span class="ic">💸</span>
+      <span class="grow"><div class="t">${escape(d.name)}</div><div class="s">${d.date}${d.note ? ' · ' + escape(d.note) : ''}</div></span>
+      <b class="amt pos">${fmtDH(d.amount)}</b>
+      <button class="btn sm" data-paid title="Marquer payé">✓</button>
+      <button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-paid]', row).onclick = () => { if (confirm(d.name + ' t\'a payé ' + fmtDH(d.amount) + ' ?')) { d.paid = true; save(); router(); } };
+    $('[data-x]', row).onclick = () => { DB.debts = DB.debts.filter(x => x !== d); save(); router(); };
+    dl.append(row);
+  });
+  $('#addDebt', v).onclick = () => {
+    const bg = modal('Impayé — qui me doit', `${field('Nom (garage / station / client)', '<input id="d_n" autofocus placeholder="ex: Garage Sidi Kacem">')}${field('Montant (DH)', '<input id="d_a" type="number" inputmode="decimal">')}${field('Date', `<input id="d_d" type="date" value="${todayISO()}">`)}${field('Note', '<input id="d_note" placeholder="ex: filtres livrés">')}<div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Ajouter</button></div>`);
+    $('#cancel', bg).onclick = () => bg.remove();
+    $('#ok', bg).onclick = () => { const n = $('#d_n', bg).value.trim(); const a = +$('#d_a', bg).value; if (!n || !a) return; DB.debts.push({ id: uid(), name: n, amount: a, date: $('#d_d', bg).value, note: $('#d_note', bg).value.trim(), paid: false }); save(); bg.remove(); router(); };
+  };
 }
 function catDetailModal(cat) {
   const m = monthOf(todayISO());
@@ -845,6 +903,14 @@ function renderReglages(v) {
     </div>
 
     <div class="card">
+      <h3>🌙 Rappel du soir</h3>
+      <p><small>Te rappelle de noter tes dépenses chaque soir. Visible dans l'app ; aussi en notification système si tu l'autorises (quand l'app reste ouverte). Astuce : mets aussi une alarme sur ton téléphone après Icha.</small></p>
+      <label class="field" style="display:flex;align-items:center;gap:10px"><input type="checkbox" id="rem_on" ${DB.reminder.enabled ? 'checked' : ''} style="width:auto;margin:0"> Activer le rappel</label>
+      ${field('Heure', `<input id="rem_t" type="time" value="${DB.reminder.time}">`)}
+      <button class="btn sm" id="saveRem">Enregistrer</button>
+    </div>
+
+    <div class="card">
       <h3>💾 Sauvegarde</h3>
       <p><small>Tes données restent sur cet appareil. Exporte un fichier pour les sauvegarder ou les transférer entre téléphone et ordinateur.</small></p>
       <div class="row" style="gap:8px"><button class="btn ghost" id="exp">⬇ Exporter</button><button class="btn ghost" id="imp">⬆ Importer</button></div>
@@ -869,6 +935,14 @@ function renderReglages(v) {
     DB.capital = +$('#s_cap', v).value || 0;
     save(); $('#saveProf', v).textContent = 'Enregistré ✓';
   };
+  $('#saveRem', v).onclick = () => {
+    DB.reminder.enabled = $('#rem_on', v).checked;
+    DB.reminder.time = $('#rem_t', v).value || '20:30';
+    save();
+    if (DB.reminder.enabled && 'Notification' in window && Notification.permission === 'default') Notification.requestPermission();
+    scheduleReminder();
+    $('#saveRem', v).textContent = 'Enregistré ✓';
+  };
   $('#exp', v).onclick = () => {
     const blob = new Blob([JSON.stringify(DB, null, 2)], { type: 'application/json' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
@@ -885,7 +959,29 @@ function renderReglages(v) {
 }
 
 /* ============================================================
+   RAPPEL DU SOIR (notification quand l'app est ouverte)
+   ============================================================ */
+let reminderTimer = null;
+function scheduleReminder() {
+  if (reminderTimer) { clearTimeout(reminderTimer); reminderTimer = null; }
+  if (!DB.reminder || !DB.reminder.enabled) return;
+  const [h, mi] = (DB.reminder.time || '20:30').split(':').map(Number);
+  const now = new Date();
+  const next = new Date(); next.setHours(h, mi, 0, 0);
+  if (next <= now) next.setDate(next.getDate() + 1);
+  reminderTimer = setTimeout(() => {
+    const noTx = !DB.transactions.some(t => t.date === todayISO());
+    if (noTx && 'Notification' in window && Notification.permission === 'granted') {
+      try { new Notification('Gestion de Vie', { body: 'Pense à noter tes dépenses du jour (2 min) 🌙', icon: 'icons/icon-192.png' }); } catch (e) {}
+    }
+    if (currentRoute() === '/') router();
+    scheduleReminder();
+  }, Math.min(next - now, 2147483000));
+}
+
+/* ============================================================
    INIT
    ============================================================ */
 $('#todayDate').textContent = new Date().toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'long' });
 router();
+scheduleReminder();
