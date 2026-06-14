@@ -164,8 +164,8 @@ function renderHome(v) {
     ['💰 Capital (moi)', DB.capital, 'teal'],
     ['👵 Caisse Maman', mSolde, mSolde >= 0 ? 'pos' : 'neg'],
     ['🚜 Ferme — perso', fPerso, fPerso >= 0 ? 'pos' : 'neg'],
-    ['🚜 Ferme — ma part', fShare.me, 'neg'],
-    ['👵 Ferme — grand-mère', fShare.gm, 'neg'],
+    ['🫒 Oliviers — ma part', fShare.me, 'neg'],
+    ['🫒 Oliviers — grand-mère', fShare.gm, 'neg'],
     ['🐑 Moutons (bénéfice)', sheepBen, sheepBen >= 0 ? 'pos' : 'neg'],
   ];
 
@@ -535,7 +535,7 @@ function mamanOpModal() {
 /* ============================================================
    FERME  (dépenses agricoles, 2 caisses : perso / moi & grand-mère)
    ============================================================ */
-const FARM_CAISSES = { perso: 'Dépenses personnelles', partage: 'Moi & Grand-mère' };
+const FARM_CAISSES = { perso: 'Personnelle (moi)', partage: 'Oliviers — Moi & GM' };
 const FARM_CATS = {
   depense: ['Semences', 'Irrigation / Eau', 'Engrais', 'Main d’œuvre', 'Moutons / Animaux', 'Gardiennage', 'Transport', 'Outils', 'Oliviers', 'Autre'],
   revenu: ['Vente olives', 'Vente moutons', 'Vente récolte', 'Autre'],
@@ -582,7 +582,7 @@ function renderFerme(v) {
   if (farmFilter !== 'all') list = list.filter(t => t.caisse === farmFilter);
 
   v.append(el(`<div><h1>🚜 Ferme</h1>
-    <div class="hint">Suivi des dépenses de la ferme (oliviers, moutons…), réparties en <b>2 caisses</b>. Chaque caisse garde son solde propre.</div>
+    <div class="hint">2 caisses : la caisse <b>partagée = uniquement les oliviers</b> (répartis avec grand-mère au prorata des arbres). <b>Tout le reste</b> (moutons, frais divers) = caisse <b>personnelle</b>.</div>
 
     <div class="grid2">
       <div class="card" style="margin:0">
@@ -596,9 +596,9 @@ function renderFerme(v) {
     </div>
     <div class="stat" style="margin-top:12px"><div class="label">Total dépensé ce mois (ferme)</div><div class="value neg">${fmtDH(monthOut)}</div></div>
 
-    <div class="section-title">🌳 Répartition par arbres (caisse partagée)</div>
+    <div class="section-title">🫒 Oliviers — répartition par arbres</div>
     <div class="card">
-      <div class="row between"><span>Total dépensé (partagé)</span><b>${fmtDH(sG.outs)}</b></div>
+      <div class="row between"><span>Total dépensé oliviers (partagé)</span><b>${fmtDH(sG.outs)}</b></div>
       <button class="btn ghost sm" id="editTrees" style="margin:8px 0">🌳 ${tsp.tot} arbres — modifier</button>
       <div class="divider"></div>
       <div class="row between"><span>🧍 Ma part <small>(${tsp.meN}/${tsp.tot})</small></span><b class="amt neg">${fmtDH(tsp.me)}</b></div>
@@ -686,16 +686,23 @@ function farmOpModal() {
   const body = `
     <div class="seg" id="segType"><button data-t="depense" class="active">－ Dépense</button><button data-t="revenu">＋ Rentrée</button></div>
     ${field('Caisse', `<select id="f_caisse">${Object.entries(FARM_CAISSES).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>`)}
+    <div class="hint" id="caisseHint" style="display:none">Caisse partagée = oliviers uniquement (réparti avec grand-mère).</div>
     ${field('Montant (DH)', '<input id="f_amt" type="number" inputmode="decimal" placeholder="0" autofocus>')}
     ${field('Motif', `<select id="f_cat">${options(FARM_CATS.depense)}</select>`)}
     ${field('Date', `<input id="f_date" type="date" value="${todayISO()}">`)}
-    ${field('Note (optionnel)', '<input id="f_note" placeholder="ex: achat 5 moutons">')}
+    ${field('Note (optionnel)', '<input id="f_note" placeholder="ex: taille des oliviers">')}
     <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`;
   const bg = modal('Mouvement — ferme', body);
   bg.querySelectorAll('#segType button').forEach(b => b.onclick = () => {
     bg.querySelectorAll('#segType button').forEach(x => x.classList.remove('active'));
     b.classList.add('active'); type = b.dataset.t; $('#f_cat', bg).innerHTML = options(FARM_CATS[type]);
+    if (type === 'depense' && $('#f_caisse', bg).value === 'partage') $('#f_cat', bg).value = 'Oliviers';
   });
+  $('#f_caisse', bg).onchange = (e) => {
+    const partage = e.target.value === 'partage';
+    $('#caisseHint', bg).style.display = partage ? 'block' : 'none';
+    if (partage && type === 'depense') $('#f_cat', bg).value = 'Oliviers';
+  };
   $('#cancel', bg).onclick = () => bg.remove();
   $('#ok', bg).onclick = () => {
     const amount = +$('#f_amt', bg).value;
