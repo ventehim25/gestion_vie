@@ -668,6 +668,19 @@ const FARM_CATS = {
   revenu: ['Vente olives', 'Vente moutons', 'Vente récolte', 'Autre'],
 };
 let farmFilter = 'all';
+let farmYear = new Date().getFullYear();
+function farmAnnual(caisse, year) {
+  const list = DB.farm.tx.filter(t => t.caisse === caisse && (t.date || '').slice(0, 4) === String(year));
+  const dep = list.filter(t => t.type === 'depense');
+  const rev = list.filter(t => t.type === 'revenu');
+  const depSum = dep.reduce((a, t) => a + (+t.amount || 0), 0);
+  const revSum = rev.reduce((a, t) => a + (+t.amount || 0), 0);
+  return { dep, rev, depSum, revSum, benefice: revSum - depSum };
+}
+function datedExpenseRows(list) {
+  return list.slice().sort((a, b) => a.date.localeCompare(b.date))
+    .map(t => `<div class="item"><span class="ic">📅</span><span class="grow"><div class="t">${escape(t.cat)}${t.note ? ' · ' + escape(t.note) : ''}</div><div class="s">${t.date}</div></span><b class="amt neg">${fmtDH(t.amount)}</b></div>`).join('');
+}
 function caisseSums(c) {
   const open = +DB.farm.opening[c] || 0;
   const list = DB.farm.tx.filter(t => t.caisse === c);
@@ -703,6 +716,8 @@ function farmRow(t) {
 function renderFerme(v) {
   const sP = caisseSums('perso'), sG = caisseSums('partage');
   const tsp = treeSplit(sG.outs), ss = sheepStats();
+  const aP = farmAnnual('perso', farmYear), aG = farmAnnual('partage', farmYear);
+  const aGsplit = treeSplit(aG.benefice);
   const m = monthOf(todayISO());
   const monthOut = DB.farm.tx.filter(t => t.type === 'depense' && monthOf(t.date) === m).reduce((a, t) => a + (+t.amount || 0), 0);
   let list = DB.farm.tx.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
@@ -745,6 +760,32 @@ function renderFerme(v) {
       <div id="sheepLog" style="margin-top:8px"></div>
     </div>
 
+    <div class="section-title">📅 Bilan annuel</div>
+    <div class="card">
+      <div class="row between" style="margin-bottom:6px">
+        <button class="btn gray sm" id="yPrev">‹</button>
+        <b>Année ${farmYear}</b>
+        <button class="btn gray sm" id="yNext">›</button>
+      </div>
+
+      <h3 style="margin:12px 0 6px">💼 Personnelle</h3>
+      <div class="row between"><span>Dépenses de l'année</span><b class="amt neg">${fmtDH(aP.depSum)}</b></div>
+      <div class="row between"><span>Revenus de l'année</span><b class="amt pos">${fmtDH(aP.revSum)}</b></div>
+      <div class="row between"><span><b>Bénéfice</b></span><b class="amt ${aP.benefice >= 0 ? 'pos' : 'neg'}">${fmtDH(aP.benefice)}</b></div>
+      ${aP.dep.length ? `<div style="margin-top:8px"><small>Détail des dépenses (date & montant)</small>${datedExpenseRows(aP.dep)}</div>` : '<small>Aucune dépense personnelle cette année.</small>'}
+
+      <div class="divider"></div>
+      <h3 style="margin:6px 0">🫒 Oliviers — Moi & Grand-mère</h3>
+      <div class="row between"><span>Dépenses de l'année</span><b class="amt neg">${fmtDH(aG.depSum)}</b></div>
+      <div class="row between"><span>Revenus (ventes olives)</span><b class="amt pos">${fmtDH(aG.revSum)}</b></div>
+      <div class="row between"><span><b>Bénéfice récolte ${farmYear}</b></span><b class="amt ${aG.benefice >= 0 ? 'pos' : 'neg'}">${fmtDH(aG.benefice)}</b></div>
+      <div class="divider"></div>
+      <small>Répartition au prorata des arbres (${tsp.tot})</small>
+      <div class="row between" style="margin-top:4px"><span>🧍 Ma part (${tsp.meN}/${tsp.tot})</span><b>${fmtDH(aGsplit.me)}</b></div>
+      <div class="row between"><span>👵 Part grand-mère (${tsp.gmN}/${tsp.tot})</span><b>${fmtDH(aGsplit.gm)}</b></div>
+      ${aG.dep.length ? `<div style="margin-top:8px"><small>Détail des dépenses oliviers (date & montant)</small>${datedExpenseRows(aG.dep)}</div>` : '<small>Aucune dépense oliviers cette année.</small>'}
+    </div>
+
     <div class="section-title">Mouvements</div>
     <div class="seg" id="farmFilter" style="margin-bottom:10px">
       <button data-f="all" class="${farmFilter === 'all' ? 'active' : ''}">Tout</button>
@@ -758,6 +799,8 @@ function renderFerme(v) {
   </div>`));
 
   $('#fab', v).onclick = () => farmOpModal();
+  $('#yPrev', v).onclick = () => { farmYear--; router(); };
+  $('#yNext', v).onclick = () => { farmYear++; router(); };
   v.querySelectorAll('#farmFilter button').forEach(b => b.onclick = () => { farmFilter = b.dataset.f; router(); });
   v.querySelectorAll('[data-del-farm]').forEach(b => b.onclick = () => { DB.farm.tx = DB.farm.tx.filter(t => t.id !== b.dataset.delFarm); save(); router(); });
   v.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
