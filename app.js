@@ -218,6 +218,54 @@ function nextPrayer(times) {
 function zakatBase() { return (+DB.capital || 0) + savingsTotal(); }
 function zakatDue() { return zakatBase() * 0.025; }
 
+/* ---------- Export vers l'agenda du téléphone (.ics, alarmes natives) ---------- */
+function _icsUTC(d) { return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); }
+function _icsLocal(y, m, day, hh, mm) { const p = n => String(n).padStart(2, '0'); return `${y}${p(m)}${p(day)}T${p(hh)}${p(mm)}00`; }
+function _icsEsc(s) { return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n'); }
+function downloadICS(filename, events) {
+  const L = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//GestionVie//FR', 'CALSCALE:GREGORIAN'];
+  events.forEach(e => {
+    L.push('BEGIN:VEVENT', 'UID:' + (e.uid || uid()) + '@gestionvie', 'DTSTAMP:' + _icsUTC(new Date()));
+    if (e.allday) L.push('DTSTART;VALUE=DATE:' + e.dateVal);
+    else { L.push('DTSTART:' + e.start); if (e.duration) L.push('DURATION:' + e.duration); }
+    L.push('SUMMARY:' + _icsEsc(e.summary));
+    if (e.rrule) L.push('RRULE:' + e.rrule);
+    if (e.alarm) L.push('BEGIN:VALARM', 'ACTION:DISPLAY', 'DESCRIPTION:' + _icsEsc(e.summary), 'TRIGGER:' + e.alarm, 'END:VALARM');
+    L.push('END:VEVENT');
+  });
+  L.push('END:VCALENDAR');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([L.join('\r\n')], { type: 'text/calendar' }));
+  a.download = filename; a.click();
+}
+function exportPrayerICS() {
+  const evs = [], base = new Date();
+  for (let i = 0; i < 30; i++) {
+    const d = new Date(base); d.setDate(base.getDate() + i);
+    const tt = prayerTimes(d);
+    ['Fajr', 'Dohr', 'Asr', 'Maghrib', 'Icha'].forEach(k => {
+      let h = _fixH(tt[k] + 0.5 / 60); const hh = Math.floor(h), mm = Math.floor((h - hh) * 60);
+      evs.push({ uid: uid(), start: _icsLocal(d.getFullYear(), d.getMonth() + 1, d.getDate(), hh, mm), duration: 'PT15M', summary: '🕌 ' + k, alarm: '-PT0M' });
+    });
+  }
+  downloadICS('prieres-kenitra-30j.ics', evs);
+}
+function exportMedICS() {
+  const evs = [], t = new Date();
+  (DB.mother.meds || []).forEach(med => (med.times || []).forEach(hm => {
+    const [hh, mm] = hm.split(':').map(Number);
+    evs.push({ uid: uid(), start: _icsLocal(t.getFullYear(), t.getMonth() + 1, t.getDate(), hh, mm), duration: 'PT10M', summary: '💊 ' + med.name, rrule: 'FREQ=DAILY', alarm: '-PT0M' });
+  }));
+  if (!evs.length) { alert('Ajoute d\'abord des heures de prise aux médicaments.'); return; }
+  downloadICS('medicaments-maman.ics', evs);
+}
+function exportEcheanceICS(e) {
+  const [y, m, d] = e.date.split('-').map(Number);
+  const ev = { uid: e.id, allday: true, dateVal: `${y}${String(m).padStart(2, '0')}${String(d).padStart(2, '0')}`, summary: '⏰ ' + e.label, alarm: '-P1D' };
+  if (e.recur === 'monthly') ev.rrule = 'FREQ=MONTHLY'; else if (e.recur === 'yearly') ev.rrule = 'FREQ=YEARLY';
+  downloadICS('echeance.ics', [ev]);
+}
+
 /* ============================================================
    ROUTER
    ============================================================ */
@@ -535,9 +583,10 @@ function renderPlanning(v) {
     const label = dleft < 0 ? 'en retard' : dleft === 0 ? "aujourd'hui" : 'dans ' + dleft + ' j';
     const row = el(`<div class="item"><span class="ic">⏰</span>
       <span class="grow"><div class="t">${escape(e.label)}${e.recur && e.recur !== 'none' ? ' 🔁' : ''}</div><div class="s">${e.date}${e.note ? ' · ' + escape(e.note) : ''}</div></span>
-      <span class="chip ${cls}">${label}</span><button class="btn gray sm" data-x>✕</button></div>`);
+      <span class="chip ${cls}">${label}</span><button class="btn gray sm" data-cal title="Ajouter à l'agenda">📅</button><button class="btn gray sm" data-x>✕</button></div>`);
     row.querySelector('.grow').style.cursor = 'pointer';
     row.querySelector('.grow').onclick = () => echeanceModal(e.id);
+    $('[data-cal]', row).onclick = () => exportEcheanceICS(e);
     $('[data-x]', row).onclick = () => { DB.echeances = DB.echeances.filter(x => x.id !== e.id); save(); router(); };
     ec.append(row);
   });
@@ -705,6 +754,7 @@ function renderMaman(v) {
     <div class="card">
       <div class="row between"><h3 style="margin:0">Liste</h3><button class="btn ghost sm" id="addMed">+ Médicament</button></div>
       <div id="meds"></div>
+      <button class="btn block ghost sm" id="medICS" style="margin-top:8px">📅 Alarmes médicaments dans l'agenda</button>
     </div>
 
     <div class="section-title">📄 Dossier CNSS</div>
@@ -740,6 +790,7 @@ function renderMaman(v) {
     $('[data-x]', row).onclick = () => { DB.mother.meds = DB.mother.meds.filter(x => x !== med); save(); router(); };
     mc.append(row);
   });
+  $('#medICS', v).onclick = () => exportMedICS();
   $('#addMed', v).onclick = () => {
     const bg = modal('Médicament', `${field('Nom', '<input id="m_n" autofocus>')}${field('Posologie', '<input id="m_s" placeholder="ex: 1 comprimé">')}${field('Heures de prise (ex: 08:00, 14:00, 20:00)', '<input id="m_h" placeholder="08:00, 20:00">')}<div class="modal-actions"><button class="btn" id="ok">Ajouter</button></div>`);
     $('#ok', bg).onclick = () => {
@@ -1091,6 +1142,7 @@ function renderSpirituel(v) {
         ${['Fajr', 'Chourouq', 'Dohr', 'Asr', 'Maghrib', 'Icha'].map(k => `<div class="pray ${next.name === k ? 'on' : ''}" style="cursor:default">${PR_LABEL[k]}<div style="font-weight:800;margin-top:2px">${fmtHM(times[k])}</div></div>`).join('')}
       </div>
       <small>Prochaine : <b>${PR_LABEL[next.name]}</b> à ${fmtHM(next.at)}${next.tomorrow ? ' (demain)' : ''}. Calcul approximatif — si besoin, touche « ajuster ».</small>
+      <button class="btn block ghost sm" id="prayICS" style="margin-top:10px">📅 Mettre les prières dans l'agenda (alarmes, 30 j)</button>
     </div>
 
     <div class="card">
@@ -1135,6 +1187,7 @@ function renderSpirituel(v) {
     set.has(p.dataset.p) ? set.delete(p.dataset.p) : set.add(p.dataset.p);
     DB.spiritual.prayers[t] = [...set]; save(); router();
   });
+  $('#prayICS', v).onclick = () => exportPrayerICS();
   $('#adjPray', v).onclick = () => {
     const o = DB.prayer.adjust;
     const body = ['Fajr', 'Dohr', 'Asr', 'Maghrib', 'Icha'].map(k => field(k + ' (± minutes)', `<input id="adj_${k}" type="number" inputmode="numeric" value="${+o[k] || 0}">`)).join('') + '<div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>';
