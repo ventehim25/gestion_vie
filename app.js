@@ -1965,8 +1965,24 @@ const ADHKAR = {
     { fr: 'Protège-moi de Ton châtiment', count: 3, ar: 'اللَّهُمَّ قِنِي عَذَابَكَ يَوْمَ تَبْعَثُ عِبَادَكَ' },
     { fr: 'Louange à Celui qui nous a nourris et abrités', count: 1, ar: 'الْحَمْدُ لِلَّهِ الَّذِي أَطْعَمَنَا وَسَقَانَا، وَكَفَانَا، وَآوَانَا، فَكَمْ مِمَّنْ لَا كَافِيَ لَهُ وَلَا مُؤْوِيَ' },
   ],
+  quotidien: [
+    { fr: 'Au réveil', count: 1, ar: 'الْحَمْدُ لِلَّهِ الَّذِي أَحْيَانَا بَعْدَ مَا أَمَاتَنَا وَإِلَيْهِ النُّشُورُ' },
+    { fr: 'Avant de manger', count: 1, ar: 'بِسْمِ اللَّهِ — وإن نسيت: بِسْمِ اللَّهِ أَوَّلَهُ وَآخِرَهُ' },
+    { fr: 'Après le repas', count: 1, ar: 'الْحَمْدُ لِلَّهِ الَّذِي أَطْعَمَنِي هَذَا وَرَزَقَنِيهِ مِنْ غَيْرِ حَوْلٍ مِنِّي وَلَا قُوَّةٍ' },
+    { fr: 'En s\'habillant', count: 1, ar: 'الْحَمْدُ لِلَّهِ الَّذِي كَسَانِي هَذَا الثَّوْبَ وَرَزَقَنِيهِ مِنْ غَيْرِ حَوْلٍ مِنِّي وَلَا قُوَّةٍ' },
+    { fr: 'Entrer aux toilettes', count: 1, ar: '(بِسْمِ اللَّهِ) اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الْخُبُثِ وَالْخَبَائِثِ' },
+    { fr: 'Sortir des toilettes', count: 1, ar: 'غُفْرَانَكَ' },
+    { fr: 'Sortir de la maison', count: 1, ar: 'بِسْمِ اللَّهِ، تَوَكَّلْتُ عَلَى اللَّهِ، وَلَا حَوْلَ وَلَا قُوَّةَ إِلَّا بِاللَّهِ' },
+    { fr: 'Entrer dans la maison', count: 1, ar: 'بِسْمِ اللَّهِ وَلَجْنَا، وَبِسْمِ اللَّهِ خَرَجْنَا، وَعَلَى اللَّهِ رَبِّنَا تَوَكَّلْنَا — ثم يسلّم على أهله' },
+    { fr: 'Entrer à la mosquée', count: 1, ar: 'اللَّهُمَّ افْتَحْ لِي أَبْوَابَ رَحْمَتِكَ' },
+    { fr: 'Sortir de la mosquée', count: 1, ar: 'اللَّهُمَّ إِنِّي أَسْأَلُكَ مِنْ فَضْلِكَ' },
+    { fr: 'Monter en voiture / voyage', count: 1, ar: 'سُبْحَانَ الَّذِي سَخَّرَ لَنَا هَذَا وَمَا كُنَّا لَهُ مُقْرِنِينَ، وَإِنَّا إِلَى رَبِّنَا لَمُنْقَلِبُونَ' },
+    { fr: 'Contre l\'angoisse et le souci', count: 1, ar: 'اللَّهُمَّ إِنِّي أَعُوذُ بِكَ مِنَ الْهَمِّ وَالْحَزَنِ، وَالْعَجْزِ وَالْكَسَلِ، وَالْبُخْلِ وَالْجُبْنِ، وَضَلَعِ الدَّيْنِ وَغَلَبَةِ الرِّجَالِ' },
+    { fr: 'Quand il pleut', count: 1, ar: 'اللَّهُمَّ صَيِّبًا نَافِعًا' },
+    { fr: 'Demander le pardon (souvent)', count: 100, ar: 'أَسْتَغْفِرُ اللَّهَ وَأَتُوبُ إِلَيْهِ' },
+  ],
 };
-const ADHKAR_TITLES = { matin: '🌅 Adhkar du matin', soir: '🌙 Adhkar du soir', priere: '🕌 Adhkar après la prière', sommeil: '😴 Adhkar du sommeil' };
+const ADHKAR_TITLES = { matin: '🌅 Adhkar du matin', soir: '🌙 Adhkar du soir', priere: '🕌 Adhkar après la prière', sommeil: '😴 Adhkar du sommeil', quotidien: '📋 Invocations du quotidien' };
 let adhkarMode = 'matin';
 function renderAdhkar(v) {
   const list = ADHKAR[adhkarMode];
@@ -1976,6 +1992,7 @@ function renderAdhkar(v) {
       <button data-m="soir" class="${adhkarMode === 'soir' ? 'active' : ''}">🌙 Soir</button>
       <button data-m="priere" class="${adhkarMode === 'priere' ? 'active' : ''}">🕌 Prière</button>
       <button data-m="sommeil" class="${adhkarMode === 'sommeil' ? 'active' : ''}">😴 Sommeil</button>
+      <button data-m="quotidien" class="${adhkarMode === 'quotidien' ? 'active' : ''}">📋 Quotidien</button>
     </div>
     <div class="hint">Touche un dhikr pour compter tes répétitions. Le PDF complet est dans Foi → Ressources.</div>
     <div id="adhList"></div>
