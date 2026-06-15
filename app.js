@@ -954,38 +954,72 @@ function renderSpirituel(v) {
    PROJETS DE VIE  (aide à la décision)
    ============================================================ */
 const STATUS = { reflexion: ['En réflexion', 'gray'], en_cours: ['En cours', 'green'], en_attente: ['En attente', 'red'], abandonne: ['Abandonné', 'gray'] };
+const PROJECT_CATS = ['Garage', 'Appartement', 'Terrain', 'Ferme / Agricole', 'Commerce / Local', 'Véhicule', 'Autre'];
+const PAYMENTS = ['Comptant', '2 tranches', '3 tranches', 'Crédit / Mourabaha', 'Autre'];
+const CAT_ICON = { 'Garage': '🔧', 'Appartement': '🏢', 'Terrain': '🌍', 'Ferme / Agricole': '🌳', 'Commerce / Local': '🏪', 'Véhicule': '🚗', 'Autre': '📦' };
 function renderProjets(v) {
-  const sorted = DB.projects.slice().sort((a, b) => (a.priority || 9) - (b.priority || 9));
+  const projects = DB.projects.slice().sort((a, b) => (a.priority || 9) - (b.priority || 9));
+  const groups = {};
+  projects.forEach(p => { const c = p.type || 'Autre'; (groups[c] = groups[c] || []).push(p); });
   v.append(el(`<div><h1>🎯 Projets de vie</h1>
-    <div class="hint">Compare tes options sans pression. Donne une priorité à chacune, pèse le pour/contre, et décide quand tes chiffres budget sont clairs.</div>
+    <div class="hint">Tes options classées par catégorie. Remplis budget, lieu, métrage, paiement, délai… pour tout comparer et décider sereinement.</div>
     <div id="plist"></div>
     <button class="btn block ghost" id="addP">+ Nouveau projet</button>
   </div>`));
   const pc = $('#plist', v);
-  sorted.forEach(p => {
-    const st = STATUS[p.status] || STATUS.reflexion;
-    const card = el(`<div class="card">
-      <div class="row between"><h3 style="margin:0">${escape(p.title)}</h3><span class="chip ${st[1]}">${st[0]}</span></div>
-      <div class="row" style="gap:8px;margin:6px 0"><span class="chip gray">Priorité ${p.priority}</span><span class="chip">${escape(p.type)}</span><span class="chip">${fmtDH(p.cost)}</span></div>
-      <div class="grid2" style="gap:10px">
-        <div><b style="color:var(--green)">✅ Pour</b>${(p.pros || []).map(x => `<div class="s" style="font-size:.82rem">• ${escape(x)}</div>`).join('') || '<div class="s">—</div>'}</div>
-        <div><b style="color:var(--red)">⚠️ Contre</b>${(p.cons || []).map(x => `<div class="s" style="font-size:.82rem">• ${escape(x)}</div>`).join('') || '<div class="s">—</div>'}</div>
-      </div>
-      ${p.notes ? `<div class="hint" style="margin-top:10px">${escape(p.notes)}</div>` : ''}
-      <div class="row" style="gap:8px;margin-top:10px"><button class="btn gray sm" data-edit>✎ Modifier</button><button class="btn gray sm" data-del>🗑</button></div>
-    </div>`);
-    $('[data-edit]', card).onclick = () => projModal(p.id);
-    $('[data-del]', card).onclick = () => { if (confirm('Supprimer ce projet ?')) { DB.projects = DB.projects.filter(x => x.id !== p.id); save(); router(); } };
-    pc.append(card);
+  Object.keys(groups).forEach(cat => {
+    pc.append(el(`<div class="section-title">${CAT_ICON[cat] || '📦'} ${escape(cat)} (${groups[cat].length})</div>`));
+    groups[cat].forEach(p => {
+      const st = STATUS[p.status] || STATUS.reflexion;
+      const rent = (p.income && p.cost) ? (p.income * 12 / p.cost * 100) : null;
+      const card = el(`<div class="card">
+        <div class="row between"><h3 style="margin:0">${escape(p.title)}</h3><span class="chip ${st[1]}">${st[0]}</span></div>
+        ${p.location ? `<div class="s">📍 ${escape(p.location)}</div>` : ''}
+        <div class="row" style="gap:6px;flex-wrap:wrap;margin:8px 0">
+          <span class="chip gray">Priorité ${p.priority}</span>
+          <span class="chip">💰 ${fmtDH(p.cost)}</span>
+          ${p.surface ? `<span class="chip">📐 ${p.surface} m²</span>` : ''}
+          ${p.payment ? `<span class="chip">💳 ${escape(p.payment)}</span>` : ''}
+          ${p.deadline ? `<span class="chip">⏳ ${escape(p.deadline)}</span>` : ''}
+        </div>
+        ${p.income ? `<div class="row between"><span>Revenu attendu / mois</span><b class="amt pos">${fmtDH(p.income)}</b></div>` : ''}
+        ${rent !== null ? `<div class="row between"><span>Rentabilité annuelle</span><b style="color:${rent >= 8 ? 'var(--green)' : 'var(--amber)'}">${rent.toFixed(1)} %</b></div>` : ''}
+        <div class="grid2" style="gap:10px;margin-top:8px">
+          <div><b style="color:var(--green)">✅ Pour</b>${(p.pros || []).map(x => `<div class="s" style="font-size:.82rem">• ${escape(x)}</div>`).join('') || '<div class="s">—</div>'}</div>
+          <div><b style="color:var(--red)">⚠️ Contre</b>${(p.cons || []).map(x => `<div class="s" style="font-size:.82rem">• ${escape(x)}</div>`).join('') || '<div class="s">—</div>'}</div>
+        </div>
+        ${p.notes ? `<div class="hint" style="margin-top:10px">${escape(p.notes)}</div>` : ''}
+        <div class="row" style="gap:8px;margin-top:10px"><button class="btn gray sm" data-edit>✎ Modifier</button><button class="btn gray sm" data-del>🗑</button></div>
+      </div>`);
+      $('[data-edit]', card).onclick = () => projModal(p.id);
+      $('[data-del]', card).onclick = () => { if (confirm('Supprimer ce projet ?')) { DB.projects = DB.projects.filter(x => x.id !== p.id); save(); router(); } };
+      pc.append(card);
+    });
   });
   $('#addP', v).onclick = () => projModal();
 }
 function projModal(id) {
-  const cur = id ? DB.projects.find(p => p.id === id) : { title: '', type: 'Investissement', cost: 0, priority: DB.projects.length + 1, status: 'reflexion', pros: [], cons: [], notes: '' };
+  const cur = id ? DB.projects.find(p => p.id === id) : { title: '', type: 'Garage', location: '', cost: 0, surface: 0, payment: 'Comptant', deadline: '', income: 0, priority: DB.projects.length + 1, status: 'reflexion', pros: [], cons: [], notes: '' };
+  const catChoices = PROJECT_CATS.includes(cur.type) ? PROJECT_CATS : [cur.type, ...PROJECT_CATS];
   const body = `
-    ${field('Titre', `<input id="p_t" value="${escape(cur.title)}" autofocus>`)}
-    <div class="grid2">${field('Type', `<select id="p_type">${options(['Logement', 'Investissement', 'Business', 'Personnel'], cur.type)}</select>`)}${field('Coût estimé (DH)', `<input id="p_c" type="number" value="${cur.cost || ''}">`)}</div>
-    <div class="grid2">${field('Priorité (1=top)', `<input id="p_pr" type="number" value="${cur.priority || 1}">`)}${field('Statut', `<select id="p_st">${Object.entries(STATUS).map(([k, val]) => `<option value="${k}" ${cur.status === k ? 'selected' : ''}>${val[0]}</option>`).join('')}</select>`)}</div>
+    ${field('Nom du projet', `<input id="p_t" value="${escape(cur.title)}" placeholder="ex: Garage à acheter" autofocus>`)}
+    <div class="grid2">
+      ${field('Catégorie', `<select id="p_type">${options(catChoices, cur.type)}</select>`)}
+      ${field('Lieu', `<input id="p_loc" value="${escape(cur.location || '')}" placeholder="ex: Benslimane">`)}
+    </div>
+    <div class="grid2">
+      ${field('Budget (DH)', `<input id="p_c" type="number" inputmode="decimal" value="${cur.cost || ''}" placeholder="ex: 340000">`)}
+      ${field('Métrage (m²)', `<input id="p_surf" type="number" inputmode="decimal" value="${cur.surface || ''}">`)}
+    </div>
+    <div class="grid2">
+      ${field('Paiement', `<select id="p_pay">${options(PAYMENTS, cur.payment || 'Comptant')}</select>`)}
+      ${field('Délai / échéance', `<input id="p_dl" value="${escape(cur.deadline || '')}" placeholder="ex: 3 mois, fin 2026">`)}
+    </div>
+    <div class="grid2">
+      ${field('Revenu attendu / mois (DH)', `<input id="p_inc" type="number" inputmode="decimal" value="${cur.income || ''}" placeholder="loyer, 0 si aucun">`)}
+      ${field('Priorité (1=top)', `<input id="p_pr" type="number" inputmode="numeric" value="${cur.priority || 1}">`)}
+    </div>
+    ${field('Statut', `<select id="p_st">${Object.entries(STATUS).map(([k, val]) => `<option value="${k}" ${cur.status === k ? 'selected' : ''}>${val[0]}</option>`).join('')}</select>`)}
     ${field('Pour (une raison par ligne)', `<textarea id="p_pro">${(cur.pros || []).join('\n')}</textarea>`)}
     ${field('Contre (une raison par ligne)', `<textarea id="p_con">${(cur.cons || []).join('\n')}</textarea>`)}
     ${field('Notes', `<textarea id="p_n">${escape(cur.notes || '')}</textarea>`)}
@@ -994,7 +1028,9 @@ function projModal(id) {
   $('#cancel', bg).onclick = () => bg.remove();
   $('#ok', bg).onclick = () => {
     const o = {
-      title: $('#p_t', bg).value.trim() || '(sans titre)', type: $('#p_type', bg).value, cost: +$('#p_c', bg).value || 0,
+      title: $('#p_t', bg).value.trim() || '(sans titre)', type: $('#p_type', bg).value, location: $('#p_loc', bg).value.trim(),
+      cost: +$('#p_c', bg).value || 0, surface: +$('#p_surf', bg).value || 0, payment: $('#p_pay', bg).value,
+      deadline: $('#p_dl', bg).value.trim(), income: +$('#p_inc', bg).value || 0,
       priority: +$('#p_pr', bg).value || 1, status: $('#p_st', bg).value,
       pros: $('#p_pro', bg).value.split('\n').map(s => s.trim()).filter(Boolean),
       cons: $('#p_con', bg).value.split('\n').map(s => s.trim()).filter(Boolean),
