@@ -49,8 +49,10 @@ function seed() {
     tasks: [],
     echeances: [],
     meals: { plan: {}, stock: [], shopping: [], ideas: [] },
+    journal: [],
+    health: { logs: [] },
     prayer: { adjust: { Fajr: 0, Dohr: 0, Asr: 0, Maghrib: 0, Icha: 0 } },
-    spiritual: { prayers: {}, quran: [], sadaqa: [], quranGoal: 2 },
+    spiritual: { prayers: {}, quran: [], sadaqa: [], quranGoal: 2, fasting: {}, dhikr: {} },
     kids: [
       { id: uid(), name: 'Enfant 1', notes: '', items: [] },
       { id: uid(), name: 'Enfant 2', notes: '', items: [] },
@@ -112,7 +114,11 @@ function migrate(d) {
   out.prayer = Object.assign({}, s.prayer, d.prayer || {});
   out.prayer.adjust = Object.assign({}, s.prayer.adjust, (d.prayer && d.prayer.adjust) || {});
   out.mother = Object.assign({}, s.mother, d.mother || {});
+  out.journal = Array.isArray(d.journal) ? d.journal : s.journal;
+  out.health = { logs: (d.health && Array.isArray(d.health.logs)) ? d.health.logs : [] };
   out.spiritual = Object.assign({}, s.spiritual, d.spiritual || {});
+  out.spiritual.fasting = out.spiritual.fasting || {};
+  out.spiritual.dhikr = out.spiritual.dhikr || {};
   const df = d.farm || {};
   out.farm = {
     opening: Object.assign({}, s.farm.opening, df.opening || {}),
@@ -229,6 +235,11 @@ function nextPrayer(times) {
   return { name: 'Fajr', at: times.Fajr, tomorrow: true };
 }
 
+/* ---------- Calendrier Hijri (via Intl, calendrier umalqura) ---------- */
+function hijriString(date) { try { return new Intl.DateTimeFormat('fr-u-ca-islamic-umalqura', { day: 'numeric', month: 'long', year: 'numeric' }).format(date || new Date()); } catch (e) { return ''; } }
+function hijriParts(date) { try { const p = new Intl.DateTimeFormat('en-u-ca-islamic-umalqura', { day: 'numeric', month: 'numeric', year: 'numeric' }).formatToParts(date); const o = {}; p.forEach(x => { if (x.type !== 'literal') o[x.type] = +x.value; }); return o; } catch (e) { return null; } }
+function nextHijri(hMonth, hDay) { const d = new Date(); d.setHours(12, 0, 0, 0); for (let i = 0; i < 400; i++) { const p = hijriParts(d); if (p && p.month === hMonth && p.day === hDay) { const r = new Date(d); r.setHours(0, 0, 0, 0); return r; } d.setDate(d.getDate() + 1); } return null; }
+
 /* ---------- Zakat ---------- */
 function zakatBase() { return (+DB.capital || 0) + savingsTotal(); }
 function zakatDue() { return zakatBase() * 0.025; }
@@ -297,6 +308,7 @@ const routes = {
   '/': renderHome, 'budget': renderBudget, 'planning': renderPlanning,
   'repas': renderRepas, 'famille': renderFamille, 'maman': renderMaman, 'ferme': renderFerme, 'spirituel': renderSpirituel, 'projets': renderProjets,
   'reglages': renderReglages, 'revue': renderRevue, 'voiture': renderVoiture, 'stats': renderStats, 'coffre': renderCoffre,
+  'journal': renderJournal, 'sante': renderSante,
 };
 function currentRoute() { return (location.hash.replace(/^#\//, '') || '/'); }
 function applyTheme() { document.body.classList.toggle('dark', DB.theme === 'dark'); }
@@ -420,6 +432,8 @@ function renderHome(v) {
       <a class="btn ghost" href="#/revue">📊 Revue semaine</a>
       <a class="btn ghost" href="#/voiture">🚗 Voiture</a>
       <a class="btn ghost" href="#/coffre">🗂️ Coffre infos</a>
+      <a class="btn ghost" href="#/journal">📔 Journal</a>
+      <a class="btn ghost" href="#/sante">❤️ Santé</a>
     </div>
 
     <a class="btn block ghost" href="#/reglages" style="margin-top:10px">⚙️ Réglages & sauvegarde</a>
@@ -1389,6 +1403,25 @@ function renderSpirituel(v) {
     </div>
 
     <div class="card">
+      <h3>🌙 Calendrier Hijri</h3>
+      <div class="value teal" style="font-size:1.15rem;font-weight:800;margin:4px 0">${hijriString(new Date())}</div>
+      <div id="hijriEvents"></div>
+    </div>
+
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">📿 Dhikr</h3><button class="btn gray sm" id="dhReset">remettre à 0</button></div>
+      <div class="row between" style="margin:8px 0"><div class="value teal" style="font-size:2rem;font-weight:800">${DB.spiritual.dhikr[t] || 0}</div><small>aujourd'hui</small></div>
+      <button class="btn block" id="dhPlus" style="font-size:1.2rem;padding:16px">+1 (Subhan'Allah · Alhamdulillah · Allahu Akbar)</button>
+      <div class="row" style="gap:8px;margin-top:8px"><button class="btn ghost sm" data-dh="33">+33</button><button class="btn ghost sm" data-dh="100">+100</button></div>
+    </div>
+
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">🤍 Jeûne</h3><span class="chip">${Object.keys(DB.spiritual.fasting).filter(d => monthOf(d) === monthOf(t) && DB.spiritual.fasting[d]).length} ce mois</span></div>
+      <label class="field" style="display:flex;align-items:center;gap:10px;margin-top:8px"><input type="checkbox" id="fastTog" ${DB.spiritual.fasting[t] ? 'checked' : ''} style="width:auto;margin:0"> J'ai jeûné aujourd'hui</label>
+      <small>Pense aux jeûnes du lundi et du jeudi. ${[1, 4].includes(new Date().getDay()) ? '👉 <b>Aujourd\'hui c\'est un bon jour pour jeûner.</b>' : ''}</small>
+    </div>
+
+    <div class="card">
       <div class="row between"><h3 style="margin:0">📖 Lecture du Coran</h3><button class="btn ghost sm" id="addQ">+ Aujourd'hui</button></div>
       <div id="qlist"></div>
     </div>
@@ -1404,6 +1437,21 @@ function renderSpirituel(v) {
     set.has(p.dataset.p) ? set.delete(p.dataset.p) : set.add(p.dataset.p);
     DB.spiritual.prayers[t] = [...set]; save(); router();
   });
+  // Hijri events
+  const he = $('#hijriEvents', v);
+  [['Ramadan', 9, 1, '🌙'], ['Aïd al-Fitr', 10, 1, '🎉'], ['Aïd al-Adha', 12, 10, '🐑']].forEach(([nm, mo, dy, ic]) => {
+    const nd = nextHijri(mo, dy); if (!nd) return;
+    const dl = daysUntil(nd.toISOString().slice(0, 10));
+    he.append(el(`<div class="row between" style="padding:3px 0"><span>${ic} ${nm}</span><b class="chip ${dl <= 30 ? 'green' : 'gray'}">dans ${dl} j</b></div>`));
+  });
+  // Dhikr
+  const dhAdd = n => { DB.spiritual.dhikr[t] = (DB.spiritual.dhikr[t] || 0) + n; save(); router(); };
+  $('#dhPlus', v).onclick = () => dhAdd(1);
+  v.querySelectorAll('[data-dh]').forEach(b => b.onclick = () => dhAdd(+b.dataset.dh));
+  $('#dhReset', v).onclick = () => { DB.spiritual.dhikr[t] = 0; save(); router(); };
+  // Jeûne
+  $('#fastTog', v).onclick = () => { if ($('#fastTog', v).checked) DB.spiritual.fasting[t] = true; else delete DB.spiritual.fasting[t]; save(); router(); };
+
   $('#prayICS', v).onclick = () => exportPrayerICS();
   $('#adjPray', v).onclick = () => {
     const o = DB.prayer.adjust;
@@ -1483,6 +1531,8 @@ function renderProjets(v) {
           ${p.surface ? `<span class="chip">📐 ${p.surface} m²</span>` : ''}
           ${p.payment ? `<span class="chip">💳 ${escape(p.payment)}</span>` : ''}
           ${p.deadline ? `<span class="chip">⏳ ${escape(p.deadline)}</span>` : ''}
+          ${p.locRating && p.locRating !== 'Non évalué' ? `<span class="chip ${['Bon', 'Parfait'].includes(p.locRating) ? 'green' : p.locRating === 'Mauvais' ? 'red' : ''}">📍 ${escape(p.locRating)}</span>` : ''}
+          ${p.condition && p.condition !== 'Non précisé' ? `<span class="chip ${p.condition === 'À rénover' ? 'red' : 'green'}">🏗️ ${escape(p.condition)}</span>` : ''}
         </div>
         ${p.income ? `<div class="row between"><span>Revenu attendu / mois</span><b class="amt pos">${fmtDH(p.income)}</b></div>` : ''}
         ${rent !== null ? `<div class="row between"><span>Rentabilité annuelle</span><b style="color:${rent >= 8 ? 'var(--green)' : 'var(--amber)'}">${rent.toFixed(1)} %</b></div>` : ''}
@@ -1577,6 +1627,10 @@ function projModal(id) {
       ${field('Revenu attendu / mois (DH)', `<input id="p_inc" type="number" inputmode="decimal" value="${cur.income || ''}" placeholder="loyer, 0 si aucun">`)}
       ${field('Priorité (1=top)', `<input id="p_pr" type="number" inputmode="numeric" value="${cur.priority || 1}">`)}
     </div>
+    <div class="grid2">
+      ${field('Emplacement (qualité)', `<select id="p_loc_r">${options(['Non évalué', 'Mauvais', 'Moyen', 'Bon', 'Parfait'], cur.locRating || 'Non évalué')}</select>`)}
+      ${field('État du bien', `<select id="p_cond">${options(['Non précisé', 'Neuf', 'Bon état', 'À rénover'], cur.condition || 'Non précisé')}</select>`)}
+    </div>
     ${field('Statut', `<select id="p_st">${Object.entries(STATUS).map(([k, val]) => `<option value="${k}" ${cur.status === k ? 'selected' : ''}>${val[0]}</option>`).join('')}</select>`)}
     ${field('Pour (une raison par ligne)', `<textarea id="p_pro">${(cur.pros || []).join('\n')}</textarea>`)}
     ${field('Contre (une raison par ligne)', `<textarea id="p_con">${(cur.cons || []).join('\n')}</textarea>`)}
@@ -1589,6 +1643,7 @@ function projModal(id) {
       title: $('#p_t', bg).value.trim() || '(sans titre)', type: $('#p_type', bg).value, location: $('#p_loc', bg).value.trim(),
       cost: +$('#p_c', bg).value || 0, surface: +$('#p_surf', bg).value || 0, payment: $('#p_pay', bg).value,
       deadline: $('#p_dl', bg).value.trim(), income: +$('#p_inc', bg).value || 0,
+      locRating: $('#p_loc_r', bg).value, condition: $('#p_cond', bg).value,
       priority: +$('#p_pr', bg).value || 1, status: $('#p_st', bg).value,
       pros: $('#p_pro', bg).value.split('\n').map(s => s.trim()).filter(Boolean),
       cons: $('#p_con', bg).value.split('\n').map(s => s.trim()).filter(Boolean),
@@ -1846,6 +1901,60 @@ function vaultModal(id) {
     <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
   $('#cancel', bg).onclick = () => bg.remove();
   $('#ok', bg).onclick = () => { const o = { label: $('#v_l', bg).value.trim() || '(sans titre)', value: $('#v_v', bg).value.trim(), note: $('#v_n', bg).value.trim() }; if (id) Object.assign(cur, o); else DB.vault.push(Object.assign({ id: uid() }, o)); save(); bg.remove(); router(); };
+}
+
+/* ============================================================
+   JOURNAL & GRATITUDE
+   ============================================================ */
+function renderJournal(v) {
+  const moods = ['😀', '🙂', '😐', '😟', '😢', '😡'];
+  const todayE = DB.journal.find(j => j.date === todayISO());
+  const list = DB.journal.slice().sort((a, b) => b.date.localeCompare(a.date));
+  v.append(el(`<div><h1>📔 Journal & gratitude</h1>
+    <div class="card">
+      <h3>Aujourd'hui</h3>
+      <div class="row" style="gap:6px;margin:8px 0;flex-wrap:wrap" id="moodRow">${moods.map(m => `<button class="btn ghost" data-m="${m}" style="font-size:1.3rem;padding:6px 12px;${todayE && todayE.mood === m ? 'background:var(--teal-l);' : ''}">${m}</button>`).join('')}</div>
+      ${field('De quoi es-tu reconnaissant ? Comment s\'est passée la journée ?', `<textarea id="j_t" style="min-height:90px">${todayE ? escape(todayE.text || '') : ''}</textarea>`)}
+      <button class="btn" id="jSave">Enregistrer</button>
+    </div>
+    <div class="section-title">Mes notes</div>
+    <div id="jList"></div>
+    <a class="btn block gray" href="#/">← Accueil</a></div>`));
+  let mood = todayE ? todayE.mood : '';
+  v.querySelectorAll('[data-m]').forEach(b => b.onclick = () => { mood = b.dataset.m; v.querySelectorAll('[data-m]').forEach(x => x.style.background = ''); b.style.background = 'var(--teal-l)'; });
+  $('#jSave', v).onclick = () => { const text = $('#j_t', v).value.trim(); let e = DB.journal.find(j => j.date === todayISO()); if (e) { e.text = text; e.mood = mood; } else DB.journal.push({ id: uid(), date: todayISO(), mood, text }); save(); router(); };
+  const jl = $('#jList', v);
+  if (!list.length) jl.append(el('<small>Aucune note encore.</small>'));
+  list.forEach(j => { const card = el(`<div class="card"><div class="row between"><b>${j.mood || '📝'} ${j.date}</b><button class="btn gray sm" data-x>✕</button></div>${j.text ? `<div style="margin-top:6px;white-space:pre-wrap">${escape(j.text)}</div>` : ''}</div>`); $('[data-x]', card).onclick = () => { DB.journal = DB.journal.filter(x => x.id !== j.id); save(); router(); }; jl.append(card); });
+}
+
+/* ============================================================
+   SUIVI SANTÉ
+   ============================================================ */
+function renderSante(v) {
+  const logs = DB.health.logs.slice().sort((a, b) => b.date.localeCompare(a.date));
+  const last = type => logs.find(l => l.type === type);
+  const lp = last('poids'), lt = last('tension'), ls = last('pas');
+  v.append(el(`<div><h1>❤️ Suivi santé</h1>
+    <div class="grid3">
+      <div class="stat"><div class="label">Poids</div><div class="value teal">${lp ? lp.v1 + ' kg' : '—'}</div></div>
+      <div class="stat"><div class="label">Tension</div><div class="value teal">${lt ? lt.v1 + '/' + lt.v2 : '—'}</div></div>
+      <div class="stat"><div class="label">Pas</div><div class="value teal">${ls ? ls.v1 : '—'}</div></div>
+    </div>
+    <div class="row" style="gap:8px;margin:10px 0"><button class="btn ghost sm" data-add="poids">⚖️ Poids</button><button class="btn ghost sm" data-add="tension">🩺 Tension</button><button class="btn ghost sm" data-add="pas">👟 Pas</button></div>
+    <div class="card" id="hList"></div>
+    <a class="btn block gray" href="#/">← Accueil</a></div>`));
+  const hl = $('#hList', v);
+  if (!logs.length) hl.append(el('<small>Aucune mesure. Ajoute ton poids, ta tension…</small>'));
+  logs.slice(0, 40).forEach(l => { const txt = l.type === 'poids' ? l.v1 + ' kg' : l.type === 'tension' ? l.v1 + '/' + l.v2 + ' mmHg' : l.v1 + ' pas'; const row = el(`<div class="item"><span class="ic">${l.type === 'poids' ? '⚖️' : l.type === 'tension' ? '🩺' : '👟'}</span><span class="grow"><div class="t">${txt}</div><div class="s">${l.date}</div></span><button class="btn gray sm" data-x>✕</button></div>`); $('[data-x]', row).onclick = () => { DB.health.logs = DB.health.logs.filter(x => x.id !== l.id); save(); router(); }; hl.append(row); });
+  v.querySelectorAll('[data-add]').forEach(b => b.onclick = () => healthModal(b.dataset.add));
+}
+function healthModal(type) {
+  const labels = { poids: 'Poids (kg)', tension: 'Tension', pas: 'Nombre de pas' };
+  const fields = type === 'tension' ? field('Systolique (ex: 12)', '<input id="h1" type="number" inputmode="decimal" autofocus>') + field('Diastolique (ex: 8)', '<input id="h2" type="number" inputmode="decimal">') : field(labels[type], `<input id="h1" type="number" inputmode="decimal" autofocus>`);
+  const bg = modal('Ajouter — ' + labels[type], fields + field('Date', `<input id="hd" type="date" value="${todayISO()}">`) + '<div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>');
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => { const v1 = +$('#h1', bg).value || 0; if (!v1) return; DB.health.logs.push({ id: uid(), type, date: $('#hd', bg).value, v1, v2: type === 'tension' ? (+$('#h2', bg).value || 0) : 0 }); save(); bg.remove(); router(); };
 }
 
 /* ============================================================
