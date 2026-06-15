@@ -44,7 +44,7 @@ function seed() {
     ],
     tasks: [],
     echeances: [],
-    meals: { plan: {}, stock: [] },
+    meals: { plan: {}, stock: [], shopping: [], ideas: [] },
     prayer: { adjust: { Fajr: 0, Dohr: 0, Asr: 0, Maghrib: 0, Icha: 0 } },
     spiritual: { prayers: {}, quran: [], sadaqa: [], quranGoal: 2 },
     kids: [
@@ -94,7 +94,12 @@ function migrate(d) {
   if (!Array.isArray(out.savings.log)) out.savings.log = [];
   out.debts = Array.isArray(d.debts) ? d.debts : s.debts;
   out.echeances = Array.isArray(d.echeances) ? d.echeances : s.echeances;
-  out.meals = { plan: (d.meals && d.meals.plan) || {}, stock: (d.meals && Array.isArray(d.meals.stock)) ? d.meals.stock : [] };
+  out.meals = {
+    plan: (d.meals && d.meals.plan) || {},
+    stock: (d.meals && Array.isArray(d.meals.stock)) ? d.meals.stock : [],
+    shopping: (d.meals && Array.isArray(d.meals.shopping)) ? d.meals.shopping : [],
+    ideas: (d.meals && Array.isArray(d.meals.ideas)) ? d.meals.ideas : [],
+  };
   out.reminder = Object.assign({}, s.reminder, d.reminder || {});
   out.prayer = Object.assign({}, s.prayer, d.prayer || {});
   out.prayer.adjust = Object.assign({}, s.prayer.adjust, (d.prayer && d.prayer.adjust) || {});
@@ -690,6 +695,11 @@ function renderRepas(v) {
     </div>
 
     <div class="card">
+      <div class="row between"><h3 style="margin:0">💡 Mes plats (idées)</h3><button class="btn ghost sm" id="addIdea">+ Plat</button></div>
+      <div id="ideaList" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+
+    <div class="card">
       <div class="row between">
         <button class="btn gray sm" id="wPrev">‹</button>
         <b>Semaine du ${fmtShort(mealWeek)} au ${fmtShort(end)}</b>
@@ -698,6 +708,14 @@ function renderRepas(v) {
     </div>
 
     <div id="mealDays"></div>
+
+    <div class="section-title">🛒 Liste de courses</div>
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">À acheter</h3><button class="btn ghost sm" id="suggest">🔎 Ce qui manque</button></div>
+      <div id="shopList" style="margin-top:6px"></div>
+      <div class="row" style="gap:8px;margin-top:8px"><input id="shopInp" placeholder="Ajouter un article…"><button class="btn sm" id="shopAdd">+</button></div>
+      ${DB.meals.shopping.some(s => s.done) ? '<button class="btn gray sm" id="shopClear" style="margin-top:8px">Retirer les articles cochés</button>' : ''}
+    </div>
   </div>`));
 
   // Stock chips
@@ -714,9 +732,40 @@ function renderRepas(v) {
     $('#ok', bg).onclick = () => { const n = $('#st_n', bg).value.trim(); if (!n) return; DB.meals.stock.push({ id: uid(), name: n }); save(); bg.remove(); router(); };
   };
 
+  // Idées de repas
+  const il = $('#ideaList', v);
+  const SLOT_LBL = { matin: '🌅', midi: '☀️', soir: '🌙', all: '🍽️' };
+  if (!DB.meals.ideas.length) il.append(el('<small>Enregistre tes plats habituels pour les réutiliser en 1 clic.</small>'));
+  DB.meals.ideas.forEach(it => {
+    const chip = el(`<span class="chip green" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:6px 10px">${SLOT_LBL[it.slot] || '🍽️'} ${escape(it.name)}<b data-rm style="color:var(--red)">✕</b></span>`);
+    chip.onclick = (e) => { if (e.target.hasAttribute('data-rm')) return; pickMealForStock(it.name, days, it.slot && it.slot !== 'all' ? it.slot : null); };
+    chip.querySelector('[data-rm]').onclick = (e) => { e.stopPropagation(); DB.meals.ideas = DB.meals.ideas.filter(x => x.id !== it.id); save(); router(); };
+    il.append(chip);
+  });
+  $('#addIdea', v).onclick = () => {
+    const bg = modal('Nouveau plat', `${field('Nom du plat', '<input id="id_n" placeholder="ex: tajine poulet, harira…" autofocus>')}${field('Pour quel repas ?', `<select id="id_s"><option value="all">🍽️ Tout</option><option value="matin">🌅 Petit-déjeuner</option><option value="midi">☀️ Déjeuner</option><option value="soir">🌙 Dîner</option></select>`)}<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
+    $('#ok', bg).onclick = () => { const n = $('#id_n', bg).value.trim(); if (!n) return; DB.meals.ideas.push({ id: uid(), name: n, slot: $('#id_s', bg).value }); save(); bg.remove(); router(); };
+  };
+
   // Week nav
   $('#wPrev', v).onclick = () => { const d = new Date(mealWeek + 'T00:00'); d.setDate(d.getDate() - 7); mealWeek = d.toISOString().slice(0, 10); router(); };
   $('#wNext', v).onclick = () => { const d = new Date(mealWeek + 'T00:00'); d.setDate(d.getDate() + 7); mealWeek = d.toISOString().slice(0, 10); router(); };
+
+  // Liste de courses
+  const shl = $('#shopList', v);
+  const shop = DB.meals.shopping.slice().sort((a, b) => (a.done - b.done));
+  if (!shop.length) shl.append(el('<small>Liste vide. Ajoute des articles ou touche « Ce qui manque ».</small>'));
+  shop.forEach(it => {
+    const row = el(`<div class="item"><span class="check ${it.done ? 'on' : ''}">${it.done ? '✓' : ''}</span><span class="grow"><div class="t" style="${it.done ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(it.name)}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
+    $('.check', row).onclick = () => { it.done = !it.done; save(); router(); };
+    $('[data-x]', row).onclick = () => { DB.meals.shopping = DB.meals.shopping.filter(x => x.id !== it.id); save(); router(); };
+    shl.append(row);
+  });
+  const addShop = () => { const n = $('#shopInp', v).value.trim(); if (!n) return; DB.meals.shopping.push({ id: uid(), name: n, done: false }); save(); router(); };
+  $('#shopAdd', v).onclick = addShop;
+  $('#shopInp', v).addEventListener('keydown', e => { if (e.key === 'Enter') addShop(); });
+  $('#suggest', v).onclick = () => suggestModal(days);
+  if ($('#shopClear', v)) $('#shopClear', v).onclick = () => { DB.meals.shopping = DB.meals.shopping.filter(s => !s.done); save(); router(); };
 
   // Days
   const md = $('#mealDays', v);
@@ -735,13 +784,13 @@ function renderRepas(v) {
     md.append(card);
   });
 }
-function pickMealForStock(name, days) {
+function pickMealForStock(name, days, defaultSlot) {
   const todayI = todayISO();
   const defaultDay = days.includes(todayI) ? todayI : days[0];
   const body = `
     <p><small>Ajouter « <b>${escape(name)}</b> » à quel repas ?</small></p>
     ${field('Jour', `<select id="pm_d">${days.map(d => `<option value="${d}" ${d === defaultDay ? 'selected' : ''}>${new Date(d + 'T00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })}</option>`).join('')}</select>`)}
-    ${field('Repas', `<select id="pm_s">${MEAL_SLOTS.map(([k, lab]) => `<option value="${k}">${lab}</option>`).join('')}</select>`)}
+    ${field('Repas', `<select id="pm_s">${MEAL_SLOTS.map(([k, lab]) => `<option value="${k}" ${k === defaultSlot ? 'selected' : ''}>${lab}</option>`).join('')}</select>`)}
     <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Ajouter</button></div>`;
   const bg = modal('Ajouter au repas', body);
   $('#cancel', bg).onclick = () => bg.remove();
@@ -751,6 +800,32 @@ function pickMealForStock(name, days) {
     DB.meals.plan[d][s] = (DB.meals.plan[d][s] ? DB.meals.plan[d][s] + ' + ' : '') + name;
     save(); bg.remove(); router();
   };
+}
+function suggestMissing(days) {
+  const stop = new Set(['avec', 'sans', 'des', 'les', 'pour', 'plus', 'une', 'aux', 'sur', 'dans', 'sauce', 'petit', 'fait', 'maison']);
+  const stockN = DB.meals.stock.map(s => s.name.toLowerCase());
+  const shopN = DB.meals.shopping.map(s => s.name.toLowerCase());
+  const seen = new Set(), out = [];
+  days.forEach(d => { const p = DB.meals.plan[d] || {}; ['matin', 'midi', 'soir'].forEach(k => {
+    (p[k] || '').toLowerCase().split(/[^a-zàâäéèêëïîôöùûüç]+/).forEach(w => {
+      if (w.length < 3 || stop.has(w) || seen.has(w)) return;
+      const has = arr => arr.some(s => s.includes(w) || w.includes(s));
+      if (!has(stockN) && !has(shopN)) { seen.add(w); out.push(w); }
+    });
+  }); });
+  return out;
+}
+function suggestModal(days) {
+  const sug = suggestMissing(days);
+  if (!sug.length) { alert('Rien à acheter : tes repas de la semaine utilisent ce que tu as en stock 👍'); return; }
+  const body = `<p><small>Mots de tes repas de la semaine absents du stock. Touche pour ajouter à la liste de courses.</small></p>
+    <div style="display:flex;flex-wrap:wrap;gap:6px">${sug.map(w => `<span class="chip" data-w="${escape(w)}" style="cursor:pointer;padding:7px 11px">+ ${escape(w)}</span>`).join('')}</div>
+    <div class="modal-actions"><button class="btn gray" id="all">Tout ajouter</button><button class="btn" id="ok">Fermer</button></div>`;
+  const bg = modal('🔎 Ce qui manque', body);
+  const add = w => { if (!DB.meals.shopping.some(s => s.name.toLowerCase() === w.toLowerCase())) DB.meals.shopping.push({ id: uid(), name: w, done: false }); };
+  bg.querySelectorAll('[data-w]').forEach(c => c.onclick = () => { add(c.dataset.w); save(); c.style.display = 'none'; });
+  $('#all', bg).onclick = () => { sug.forEach(add); save(); bg.remove(); router(); };
+  $('#ok', bg).onclick = () => { bg.remove(); router(); };
 }
 
 /* ============================================================
