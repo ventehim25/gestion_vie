@@ -718,6 +718,7 @@ function renderFerme(v) {
   const tsp = treeSplit(sG.outs), ss = sheepStats();
   const aP = farmAnnual('perso', farmYear), aG = farmAnnual('partage', farmYear);
   const aGsplit = treeSplit(aG.benefice);
+  const oliveDep = DB.farm.tx.filter(t => t.caisse === 'partage' && t.type === 'depense').sort((a, b) => b.date.localeCompare(a.date));
   const m = monthOf(todayISO());
   const monthOut = DB.farm.tx.filter(t => t.type === 'depense' && monthOf(t.date) === m).reduce((a, t) => a + (+t.amount || 0), 0);
   let list = DB.farm.tx.slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
@@ -747,6 +748,8 @@ function renderFerme(v) {
       <div class="bar"><span style="width:${tsp.tot ? tsp.meN / tsp.tot * 100 : 0}%"></span></div>
       <div class="row between" style="margin-top:10px"><span>👵 Part grand-mère <small>(${tsp.gmN}/${tsp.tot})</small></span><b class="amt neg">${fmtDH(tsp.gm)}</b></div>
       <div class="bar"><span style="width:${tsp.tot ? tsp.gmN / tsp.tot * 100 : 0}%"></span></div>
+      <button class="btn block ghost sm" id="addOlive" style="margin-top:12px">➕ Décrire une dépense oliviers</button>
+      ${oliveDep.length ? `<div style="margin-top:8px"><small>Dépenses oliviers décrites :</small>${oliveDep.map(t => `<div class="item"><span class="ic">🫒</span><span class="grow"><div class="t">${escape(t.cat)}${t.note ? ' · ' + escape(t.note) : ''}</div><div class="s">${t.date}</div></span><b class="amt neg">${fmtDH(t.amount)}</b><button class="btn gray sm" data-del-farm="${t.id}">✕</button></div>`).join('')}</div>` : ''}
     </div>
 
     <div class="section-title">🐑 Moutons</div>
@@ -799,6 +802,7 @@ function renderFerme(v) {
   </div>`));
 
   $('#fab', v).onclick = () => farmOpModal();
+  $('#addOlive', v).onclick = () => farmOpModal('partage');
   $('#yPrev', v).onclick = () => { farmYear--; router(); };
   $('#yNext', v).onclick = () => { farmYear++; router(); };
   v.querySelectorAll('#farmFilter button').forEach(b => b.onclick = () => { farmFilter = b.dataset.f; router(); });
@@ -851,16 +855,16 @@ function sheepModal() {
     save(); bg.remove(); router();
   };
 }
-function farmOpModal() {
+function farmOpModal(defCaisse) {
   let type = 'depense';
   const body = `
     <div class="seg" id="segType"><button data-t="depense" class="active">－ Dépense</button><button data-t="revenu">＋ Rentrée</button></div>
-    ${field('Caisse', `<select id="f_caisse">${Object.entries(FARM_CAISSES).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>`)}
-    <div class="hint" id="caisseHint" style="display:none">Caisse partagée = oliviers uniquement (réparti avec grand-mère).</div>
+    ${field('Caisse', `<select id="f_caisse">${Object.entries(FARM_CAISSES).map(([k, l]) => `<option value="${k}" ${k === defCaisse ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
+    <div class="hint" id="caisseHint" style="display:${defCaisse === 'partage' ? 'block' : 'none'}">Caisse partagée = oliviers uniquement (réparti avec grand-mère).</div>
     ${field('Montant (DH)', '<input id="f_amt" type="number" inputmode="decimal" placeholder="0" autofocus>')}
-    ${field('Motif', `<select id="f_cat">${options(FARM_CATS.depense)}</select>`)}
+    ${field('Motif', `<select id="f_cat">${options(FARM_CATS.depense, defCaisse === 'partage' ? 'Oliviers' : '')}</select>`)}
     ${field('Date', `<input id="f_date" type="date" value="${todayISO()}">`)}
-    ${field('Note (optionnel)', '<input id="f_note" placeholder="ex: taille des oliviers">')}
+    ${field('Détail / description de la dépense', '<input id="f_note" placeholder="ex: taille des oliviers, 2 sacs d’engrais, ouvrier 1 jour…">')}
     <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`;
   const bg = modal('Mouvement — ferme', body);
   bg.querySelectorAll('#segType button').forEach(b => b.onclick = () => {
