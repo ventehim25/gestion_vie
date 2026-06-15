@@ -35,6 +35,8 @@ function seed() {
     habits: [],
     car: { km: 0, log: [] },
     vault: [],
+    loans: [],
+    contacts: [],
     transactions: [],
     fixed: [
       { id: uid(), label: 'Assurance voiture', amount: 0, account: 'Moi', cat: 'Assurance' },
@@ -111,6 +113,8 @@ function migrate(d) {
   out.habits = Array.isArray(d.habits) ? d.habits : s.habits;
   out.car = { km: (d.car && +d.car.km) || 0, log: (d.car && Array.isArray(d.car.log)) ? d.car.log : [] };
   out.vault = Array.isArray(d.vault) ? d.vault : s.vault;
+  out.loans = Array.isArray(d.loans) ? d.loans : s.loans;
+  out.contacts = Array.isArray(d.contacts) ? d.contacts : s.contacts;
   out.prayer = Object.assign({}, s.prayer, d.prayer || {});
   out.prayer.adjust = Object.assign({}, s.prayer.adjust, (d.prayer && d.prayer.adjust) || {});
   out.mother = Object.assign({}, s.mother, d.mother || {});
@@ -309,6 +313,7 @@ const routes = {
   'repas': renderRepas, 'famille': renderFamille, 'maman': renderMaman, 'ferme': renderFerme, 'spirituel': renderSpirituel, 'projets': renderProjets,
   'reglages': renderReglages, 'revue': renderRevue, 'voiture': renderVoiture, 'stats': renderStats, 'coffre': renderCoffre,
   'journal': renderJournal, 'sante': renderSante, 'adhkar': renderAdhkar,
+  'rappels': renderRappels, 'prets': renderPrets, 'contacts': renderContacts,
 };
 function currentRoute() { return (location.hash.replace(/^#\//, '') || '/'); }
 function applyTheme() { document.body.classList.toggle('dark', DB.theme === 'dark'); }
@@ -434,6 +439,9 @@ function renderHome(v) {
       <a class="btn ghost" href="#/coffre">🗂️ Coffre infos</a>
       <a class="btn ghost" href="#/journal">📔 Journal</a>
       <a class="btn ghost" href="#/sante">❤️ Santé</a>
+      <a class="btn ghost" href="#/rappels">📄 Documents</a>
+      <a class="btn ghost" href="#/prets">🤝 Prêts</a>
+      <a class="btn ghost" href="#/contacts">📇 Contacts</a>
     </div>
 
     <a class="btn block ghost" href="#/reglages" style="margin-top:10px">⚙️ Réglages & sauvegarde</a>
@@ -709,10 +717,13 @@ function bumpEcheances() {
   });
   if (changed) persist();
 }
+const ECH_KINDS = ['Document', 'Assurance/Auto', 'Garantie', 'Facture', 'Abonnement', 'Rappel', 'Autre'];
+const ECH_ICON = { 'Document': '📄', 'Assurance/Auto': '🚗', 'Garantie': '🧾', 'Facture': '💡', 'Abonnement': '🔁', 'Rappel': '🔔', 'Autre': '📌' };
 function echeanceModal(id) {
-  const cur = id ? DB.echeances.find(e => e.id === id) : { label: '', date: todayISO(), note: '', recur: 'yearly' };
+  const cur = id ? DB.echeances.find(e => e.id === id) : { label: '', date: todayISO(), note: '', recur: 'yearly', kind: 'Document' };
   const body = `
     ${field('Quoi ?', `<input id="e_l" value="${escape(cur.label)}" placeholder="ex: Assurance voiture" autofocus>`)}
+    ${field('Type', `<select id="e_k">${options(ECH_KINDS, cur.kind || 'Autre')}</select>`)}
     ${field('Date limite', `<input id="e_d" type="date" value="${cur.date}">`)}
     ${field('Répétition', `<select id="e_r">
       <option value="none" ${cur.recur === 'none' ? 'selected' : ''}>Aucune</option>
@@ -724,7 +735,7 @@ function echeanceModal(id) {
   const bg = modal(id ? 'Modifier l\'échéance' : 'Nouvelle échéance', body);
   $('#cancel', bg).onclick = () => bg.remove();
   $('#ok', bg).onclick = () => {
-    const o = { label: $('#e_l', bg).value.trim() || '(sans nom)', date: $('#e_d', bg).value, recur: $('#e_r', bg).value, note: $('#e_n', bg).value.trim() };
+    const o = { label: $('#e_l', bg).value.trim() || '(sans nom)', kind: $('#e_k', bg).value, date: $('#e_d', bg).value, recur: $('#e_r', bg).value, note: $('#e_n', bg).value.trim() };
     if (id) Object.assign(cur, o); else DB.echeances.push(Object.assign({ id: uid() }, o));
     save(); bg.remove(); router();
   };
@@ -2009,6 +2020,101 @@ function renderAdhkar(v) {
     card.onclick = () => { c = c < d.count ? c + 1 : 0; const b = $('[data-cnt]', card); b.textContent = c + ' / ' + d.count; b.className = 'chip ' + (c >= d.count ? 'green' : 'gray'); };
     al.append(card);
   });
+}
+
+/* ============================================================
+   DOCUMENTS & EXPIRATIONS (échéances enrichies)
+   ============================================================ */
+function renderRappels(v) {
+  const list = DB.echeances.slice().sort((a, b) => a.date.localeCompare(b.date));
+  v.append(el(`<div><h1>📄 Documents & expirations</h1>
+    <div class="hint">Papiers, garanties, factures, abonnements et rappels. L'app prévient avant la date. Touche 📅 pour créer l'alarme dans l'agenda.</div>
+    <div class="card" id="echList"></div>
+    <button class="btn block ghost" id="addE">+ Ajouter</button>
+    <a class="btn block gray" href="#/" style="margin-top:8px">← Accueil</a></div>`));
+  const ec = $('#echList', v);
+  if (!list.length) ec.append(el('<small>Rien pour l\'instant. Ajoute ta CIN, assurance, visite technique, garantie du frigo…</small>'));
+  list.forEach(e => {
+    const dl = daysUntil(e.date);
+    const cls = dl <= 7 ? 'red' : dl <= 30 ? '' : 'green';
+    const lab = dl < 0 ? 'en retard ' + (-dl) + ' j' : 'dans ' + dl + ' j';
+    const row = el(`<div class="item"><span class="ic">${ECH_ICON[e.kind] || '📄'}</span><span class="grow"><div class="t">${escape(e.label)}${e.note ? ' · ' + escape(e.note) : ''}</div><div class="s"><span class="chip">${escape(e.kind || 'Autre')}</span> ${e.date}${e.recur && e.recur !== 'none' ? ' · 🔁' : ''}</div></span><span class="chip ${cls}">${lab}</span><button class="btn gray sm" data-cal>📅</button><button class="btn gray sm" data-x>✕</button></div>`);
+    row.querySelector('.grow').style.cursor = 'pointer';
+    row.querySelector('.grow').onclick = () => echeanceModal(e.id);
+    $('[data-cal]', row).onclick = () => exportEcheanceICS(e);
+    $('[data-x]', row).onclick = () => { DB.echeances = DB.echeances.filter(x => x.id !== e.id); save(); router(); };
+    ec.append(row);
+  });
+  $('#addE', v).onclick = () => echeanceModal();
+}
+
+/* ============================================================
+   PRÊTS & EMPRUNTS (objets / argent)
+   ============================================================ */
+function renderPrets(v) {
+  const list = DB.loans.slice().sort((a, b) => (a.returned - b.returned) || b.date.localeCompare(a.date));
+  const owedToMe = DB.loans.filter(l => l.type === 'prete' && !l.returned).reduce((a, l) => a + (+l.amount || 0), 0);
+  const iOwe = DB.loans.filter(l => l.type === 'emprunte' && !l.returned).reduce((a, l) => a + (+l.amount || 0), 0);
+  v.append(el(`<div><h1>🤝 Prêts & emprunts</h1>
+    <div class="hint">Ce que tu as prêté (objet ou argent) et ce que tu as emprunté. Coche quand c'est rendu.</div>
+    <div class="grid2"><div class="stat"><div class="label">On me doit</div><div class="value pos">${fmtDH(owedToMe)}</div></div><div class="stat"><div class="label">Je dois</div><div class="value neg">${fmtDH(iOwe)}</div></div></div>
+    <div class="card" id="loanList" style="margin-top:10px"></div>
+    <button class="btn block ghost" id="addL">+ Ajouter</button>
+    <a class="btn block gray" href="#/" style="margin-top:8px">← Accueil</a></div>`));
+  const ll = $('#loanList', v);
+  if (!list.length) ll.append(el('<small>Rien. Ajoute un objet ou de l\'argent prêté/emprunté.</small>'));
+  list.forEach(l => {
+    const dir = l.type === 'prete' ? '➡️ Prêté à' : '⬅️ Emprunté de';
+    const row = el(`<div class="item"><span class="check ${l.returned ? 'on' : ''}">${l.returned ? '✓' : ''}</span><span class="grow"><div class="t" style="${l.returned ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(l.what)}${l.amount ? ' · ' + fmtDH(l.amount) : ''}</div><div class="s">${dir} ${escape(l.who)} · ${l.date}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
+    $('.check', row).onclick = () => { l.returned = !l.returned; save(); router(); };
+    $('[data-x]', row).onclick = () => { DB.loans = DB.loans.filter(x => x.id !== l.id); save(); router(); };
+    ll.append(row);
+  });
+  $('#addL', v).onclick = () => loanModal();
+}
+function loanModal() {
+  let type = 'prete';
+  const bg = modal('Prêt / emprunt', `
+    <div class="seg" id="lt"><button data-t="prete" class="active">➡️ J'ai prêté</button><button data-t="emprunte">⬅️ J'ai emprunté</button></div>
+    ${field('Quoi ? (objet ou raison)', '<input id="l_w" placeholder="ex: perceuse, dépannage…" autofocus>')}
+    ${field('Montant (DH) — si c\'est de l\'argent', '<input id="l_a" type="number" inputmode="decimal">')}
+    ${field('Qui ?', '<input id="l_who" placeholder="ex: voisin Ahmed">')}
+    ${field('Date', `<input id="l_d" type="date" value="${todayISO()}">`)}
+    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
+  bg.querySelectorAll('#lt button').forEach(b => b.onclick = () => { bg.querySelectorAll('#lt button').forEach(x => x.classList.remove('active')); b.classList.add('active'); type = b.dataset.t; });
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => { const w = $('#l_w', bg).value.trim(); if (!w) return; DB.loans.push({ id: uid(), type, what: w, amount: +$('#l_a', bg).value || 0, who: $('#l_who', bg).value.trim(), date: $('#l_d', bg).value, returned: false }); save(); bg.remove(); router(); };
+}
+
+/* ============================================================
+   CONTACTS UTILES
+   ============================================================ */
+function renderContacts(v) {
+  const list = DB.contacts.slice().sort((a, b) => a.name.localeCompare(b.name));
+  v.append(el(`<div><h1>📇 Contacts utiles</h1>
+    <div class="hint">Plombier, électricien, mécano, médecin… à appeler en 1 clic.</div>
+    <div id="contactList"></div>
+    <button class="btn block ghost" id="addC">+ Ajouter un contact</button>
+    <a class="btn block gray" href="#/" style="margin-top:8px">← Accueil</a></div>`));
+  const cl = $('#contactList', v);
+  if (!list.length) cl.append(el('<small>Aucun contact.</small>'));
+  list.forEach(c => {
+    const card = el(`<div class="card"><div class="row between"><span class="grow"><div class="t" style="font-weight:700">${escape(c.name)}</div><div class="s">${escape(c.role || '')}${c.phone ? ' · ' + escape(c.phone) : ''}</div></span><span style="display:flex;gap:6px;align-items:center">${c.phone ? `<a class="btn sm" href="tel:${escape(c.phone)}">📞</a>` : ''}<button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></span></div></div>`);
+    $('[data-e]', card).onclick = () => contactModal(c.id);
+    $('[data-x]', card).onclick = () => { DB.contacts = DB.contacts.filter(x => x.id !== c.id); save(); router(); };
+    cl.append(card);
+  });
+  $('#addC', v).onclick = () => contactModal();
+}
+function contactModal(id) {
+  const cur = id ? DB.contacts.find(c => c.id === id) : { name: '', role: '', phone: '' };
+  const bg = modal(id ? 'Modifier le contact' : 'Nouveau contact', `
+    ${field('Nom', `<input id="c_n" value="${escape(cur.name)}" placeholder="ex: Ahmed plombier" autofocus>`)}
+    ${field('Métier / rôle', `<input id="c_r" value="${escape(cur.role || '')}" placeholder="ex: plombier, médecin">`)}
+    ${field('Téléphone', `<input id="c_p" type="tel" value="${escape(cur.phone || '')}" placeholder="06 …">`)}
+    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => { const n = $('#c_n', bg).value.trim(); if (!n) return; const o = { name: n, role: $('#c_r', bg).value.trim(), phone: $('#c_p', bg).value.trim() }; if (id) Object.assign(cur, o); else DB.contacts.push(Object.assign({ id: uid() }, o)); save(); bg.remove(); router(); };
 }
 
 /* ============================================================
