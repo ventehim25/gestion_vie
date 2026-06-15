@@ -37,6 +37,7 @@ function seed() {
     vault: [],
     loans: [],
     contacts: [],
+    warranties: [],
     transactions: [],
     fixed: [
       { id: uid(), label: 'Assurance voiture', amount: 0, account: 'Moi', cat: 'Assurance' },
@@ -115,6 +116,7 @@ function migrate(d) {
   out.vault = Array.isArray(d.vault) ? d.vault : s.vault;
   out.loans = Array.isArray(d.loans) ? d.loans : s.loans;
   out.contacts = Array.isArray(d.contacts) ? d.contacts : s.contacts;
+  out.warranties = Array.isArray(d.warranties) ? d.warranties : s.warranties;
   out.prayer = Object.assign({}, s.prayer, d.prayer || {});
   out.prayer.adjust = Object.assign({}, s.prayer.adjust, (d.prayer && d.prayer.adjust) || {});
   out.mother = Object.assign({}, s.mother, d.mother || {});
@@ -313,7 +315,7 @@ const routes = {
   'repas': renderRepas, 'famille': renderFamille, 'maman': renderMaman, 'ferme': renderFerme, 'spirituel': renderSpirituel, 'projets': renderProjets,
   'reglages': renderReglages, 'revue': renderRevue, 'voiture': renderVoiture, 'stats': renderStats, 'coffre': renderCoffre,
   'journal': renderJournal, 'sante': renderSante, 'adhkar': renderAdhkar,
-  'rappels': renderRappels, 'prets': renderPrets, 'contacts': renderContacts,
+  'rappels': renderRappels, 'prets': renderPrets, 'contacts': renderContacts, 'garanties': renderGaranties,
 };
 function currentRoute() { return (location.hash.replace(/^#\//, '') || '/'); }
 function applyTheme() { document.body.classList.toggle('dark', DB.theme === 'dark'); }
@@ -440,6 +442,7 @@ function renderHome(v) {
       <a class="btn ghost" href="#/journal">📔 Journal</a>
       <a class="btn ghost" href="#/sante">❤️ Santé</a>
       <a class="btn ghost" href="#/rappels">📄 Documents</a>
+      <a class="btn ghost" href="#/garanties">🧾 Garanties</a>
       <a class="btn ghost" href="#/prets">🤝 Prêts</a>
       <a class="btn ghost" href="#/contacts">📇 Contacts</a>
     </div>
@@ -2115,6 +2118,49 @@ function contactModal(id) {
     <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
   $('#cancel', bg).onclick = () => bg.remove();
   $('#ok', bg).onclick = () => { const n = $('#c_n', bg).value.trim(); if (!n) return; const o = { name: n, role: $('#c_r', bg).value.trim(), phone: $('#c_p', bg).value.trim() }; if (id) Object.assign(cur, o); else DB.contacts.push(Object.assign({ id: uid() }, o)); save(); bg.remove(); router(); };
+}
+
+/* ============================================================
+   GARANTIES (achat + durée → fin auto)
+   ============================================================ */
+function addMonthsISO(iso, m) { const d = new Date(iso + 'T00:00'); d.setMonth(d.getMonth() + (+m || 0)); return d.toISOString().slice(0, 10); }
+function exportWarrantyICS(w) {
+  const end = addMonthsISO(w.date, w.months);
+  const [y, m, d] = end.split('-').map(Number);
+  downloadICS('garantie.ics', [{ uid: w.id, allday: true, dateVal: `${y}${String(m).padStart(2, '0')}${String(d).padStart(2, '0')}`, summary: '🧾 Fin garantie : ' + w.item, alarm: '-P7D' }]);
+}
+function renderGaranties(v) {
+  const list = DB.warranties.slice().map(w => ({ ...w, end: addMonthsISO(w.date, w.months) })).sort((a, b) => a.end.localeCompare(b.end));
+  v.append(el(`<div><h1>🧾 Garanties</h1>
+    <div class="hint">Date d'achat + durée → l'app calcule la <b>fin de garantie</b> et te prévient avant. Touche 📅 pour l'alarme agenda.</div>
+    <div class="card" id="wList"></div>
+    <button class="btn block ghost" id="addW">+ Ajouter une garantie</button>
+    <a class="btn block gray" href="#/" style="margin-top:8px">← Accueil</a></div>`));
+  const wl = $('#wList', v);
+  if (!list.length) wl.append(el('<small>Aucune garantie. Ajoute ton frigo, ton téléphone, ta TV…</small>'));
+  list.forEach(w => {
+    const dl = daysUntil(w.end);
+    const cls = dl < 0 ? 'gray' : dl <= 30 ? 'red' : dl <= 90 ? '' : 'green';
+    const lab = dl < 0 ? 'expirée' : 'fin dans ' + dl + ' j';
+    const row = el(`<div class="item"><span class="ic">🧾</span><span class="grow"><div class="t">${escape(w.item)}${w.amount ? ' · ' + fmtDH(w.amount) : ''}</div><div class="s">Acheté ${w.date} · ${w.months} mois → <b>${w.end}</b>${w.note ? ' · ' + escape(w.note) : ''}</div></span><span class="chip ${cls}">${lab}</span><button class="btn gray sm" data-cal>📅</button><button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-cal]', row).onclick = () => exportWarrantyICS(w);
+    $('[data-e]', row).onclick = () => warrantyModal(w.id);
+    $('[data-x]', row).onclick = () => { DB.warranties = DB.warranties.filter(x => x.id !== w.id); save(); router(); };
+    wl.append(row);
+  });
+  $('#addW', v).onclick = () => warrantyModal();
+}
+function warrantyModal(id) {
+  const cur = id ? DB.warranties.find(w => w.id === id) : { item: '', date: todayISO(), months: 24, amount: 0, note: '' };
+  const bg = modal(id ? 'Modifier la garantie' : 'Nouvelle garantie', `
+    ${field('Appareil / objet', `<input id="w_i" value="${escape(cur.item)}" placeholder="ex: Frigo, téléphone, TV" autofocus>`)}
+    ${field('Date d\'achat', `<input id="w_d" type="date" value="${cur.date}">`)}
+    ${field('Durée de garantie (mois)', `<select id="w_m">${options(['6', '12', '24', '36', '60'], String(cur.months || 24))}</select>`)}
+    ${field('Prix (DH, optionnel)', `<input id="w_a" type="number" inputmode="decimal" value="${cur.amount || ''}">`)}
+    ${field('Magasin / note', `<input id="w_n" value="${escape(cur.note || '')}" placeholder="ex: Marjane, facture gardée">`)}
+    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => { const it = $('#w_i', bg).value.trim(); if (!it) return; const o = { item: it, date: $('#w_d', bg).value, months: +$('#w_m', bg).value || 24, amount: +$('#w_a', bg).value || 0, note: $('#w_n', bg).value.trim() }; if (id) Object.assign(cur, o); else DB.warranties.push(Object.assign({ id: uid() }, o)); save(); bg.remove(); router(); };
 }
 
 /* ============================================================
