@@ -308,7 +308,7 @@ const routes = {
   '/': renderHome, 'budget': renderBudget, 'planning': renderPlanning,
   'repas': renderRepas, 'famille': renderFamille, 'maman': renderMaman, 'ferme': renderFerme, 'spirituel': renderSpirituel, 'projets': renderProjets,
   'reglages': renderReglages, 'revue': renderRevue, 'voiture': renderVoiture, 'stats': renderStats, 'coffre': renderCoffre,
-  'journal': renderJournal, 'sante': renderSante,
+  'journal': renderJournal, 'sante': renderSante, 'adhkar': renderAdhkar,
 };
 function currentRoute() { return (location.hash.replace(/^#\//, '') || '/'); }
 function applyTheme() { document.body.classList.toggle('dark', DB.theme === 'dark'); }
@@ -1397,7 +1397,8 @@ function renderSpirituel(v) {
     </div>
 
     <div class="card">
-      <h3>📚 Ressources (PDF)</h3>
+      <h3>📚 Ressources</h3>
+      <a class="btn block" href="#/adhkar" style="margin-bottom:8px">📿 Adhkar matin & soir (dans l'app, hors-ligne)</a>
       <a class="btn block" href="https://archive.org/download/quran-mushaf-almadinah-warsh/quran-mushaf-almadinah-warsh.pdf" target="_blank" rel="noopener" style="margin-bottom:8px">📖 Coran complet — Warsh (PDF)</a>
       <a class="btn block ghost" href="https://archive.org/download/azkar_202202/%D8%A3%D8%B0%D9%83%D8%A7%D8%B1%20%D8%A7%D9%84%D8%B5%D8%A8%D8%A7%D8%AD%20%D9%88%D8%A7%D9%84%D9%85%D8%B3%D8%A7%D8%A1.pdf" target="_blank" rel="noopener">🌅🌙 Adhkar du matin & du soir (PDF)</a>
       <small style="display:block;margin-top:8px">Téléchargement depuis archive.org. Une fois ouvert, enregistre-le sur ton téléphone pour le lire hors-ligne.</small>
@@ -1908,6 +1909,61 @@ function vaultModal(id) {
     <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
   $('#cancel', bg).onclick = () => bg.remove();
   $('#ok', bg).onclick = () => { const o = { label: $('#v_l', bg).value.trim() || '(sans titre)', value: $('#v_v', bg).value.trim(), note: $('#v_n', bg).value.trim() }; if (id) Object.assign(cur, o); else DB.vault.push(Object.assign({ id: uid() }, o)); save(); bg.remove(); router(); };
+}
+
+/* ============================================================
+   ADHKAR DU MATIN & DU SOIR (en arabe, hors-ligne)
+   ============================================================ */
+const ADHKAR = {
+  matin: [
+    { fr: 'آية الكرسي — Ayat al-Kursi', count: 1, ar: 'اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَّهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَن ذَا الَّذِي يَشْفَعُ عِندَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِّنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ' },
+    { fr: 'الإخلاص والفلق والناس — Al-Ikhlas, Al-Falaq, An-Nas', count: 3, ar: 'قُلْ هُوَ اللَّهُ أَحَدٌ ۞ اللَّهُ الصَّمَدُ ۞ لَمْ يَلِدْ وَلَمْ يُولَدْ ۞ وَلَمْ يَكُن لَّهُ كُفُوًا أَحَدٌ ﴿ قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ... ﴾ ﴿ قُلْ أَعُوذُ بِرَبِّ النَّاسِ ... ﴾' },
+    { fr: 'Au matin', count: 1, ar: 'أَصْبَحْنَا وَأَصْبَحَ الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ، رَبِّ أَسْأَلُكَ خَيْرَ مَا فِي هَذَا الْيَوْمِ وَخَيْرَ مَا بَعْدَهُ، وَأَعُوذُ بِكَ مِنْ شَرِّ مَا فِي هَذَا الْيَوْمِ وَشَرِّ مَا بَعْدَهُ' },
+    { fr: 'Par Toi nous entrons dans le matin', count: 1, ar: 'اللَّهُمَّ بِكَ أَصْبَحْنَا، وَبِكَ أَمْسَيْنَا، وَبِكَ نَحْيَا، وَبِكَ نَمُوتُ، وَإِلَيْكَ النُّشُورُ' },
+    { fr: 'سيد الاستغفار — Le maître du pardon', count: 1, ar: 'اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ' },
+    { fr: 'Agrément', count: 3, ar: 'رَضِيتُ بِاللَّهِ رَبًّا، وَبِالْإِسْلَامِ دِينًا، وَبِمُحَمَّدٍ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ نَبِيًّا' },
+    { fr: 'Bien-être du corps', count: 3, ar: 'اللَّهُمَّ عَافِنِي فِي بَدَنِي، اللَّهُمَّ عَافِنِي فِي سَمْعِي، اللَّهُمَّ عَافِنِي فِي بَصَرِي، لَا إِلَهَ إِلَّا أَنْتَ' },
+    { fr: 'Allah me suffit', count: 7, ar: 'حَسْبِيَ اللَّهُ لَا إِلَهَ إِلَّا هُوَ، عَلَيْهِ تَوَكَّلْتُ، وَهُوَ رَبُّ الْعَرْشِ الْعَظِيمِ' },
+    { fr: 'Au nom d\'Allah', count: 3, ar: 'بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ، وَهُوَ السَّمِيعُ الْعَلِيمُ' },
+    { fr: 'Gloire et louange à Allah', count: 100, ar: 'سُبْحَانَ اللَّهِ وَبِحَمْدِهِ' },
+    { fr: 'Unicité', count: 10, ar: 'لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ، وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ' },
+    { fr: 'Prière sur le Prophète ﷺ', count: 10, ar: 'اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ' },
+  ],
+  soir: [
+    { fr: 'آية الكرسي — Ayat al-Kursi', count: 1, ar: 'اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَّهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ۗ مَن ذَا الَّذِي يَشْفَعُ عِندَهُ إِلَّا بِإِذْنِهِ ۚ يَعْلَمُ مَا بَيْنَ أَيْدِيهِمْ وَمَا خَلْفَهُمْ ۖ وَلَا يُحِيطُونَ بِشَيْءٍ مِّنْ عِلْمِهِ إِلَّا بِمَا شَاءَ ۚ وَسِعَ كُرْسِيُّهُ السَّمَاوَاتِ وَالْأَرْضَ ۖ وَلَا يَئُودُهُ حِفْظُهُمَا ۚ وَهُوَ الْعَلِيُّ الْعَظِيمُ' },
+    { fr: 'الإخلاص والفلق والناس — Al-Ikhlas, Al-Falaq, An-Nas', count: 3, ar: 'قُلْ هُوَ اللَّهُ أَحَدٌ ... ﴿ قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ... ﴾ ﴿ قُلْ أَعُوذُ بِرَبِّ النَّاسِ ... ﴾' },
+    { fr: 'Au soir', count: 1, ar: 'أَمْسَيْنَا وَأَمْسَى الْمُلْكُ لِلَّهِ، وَالْحَمْدُ لِلَّهِ، لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ، رَبِّ أَسْأَلُكَ خَيْرَ مَا فِي هَذِهِ اللَّيْلَةِ وَخَيْرَ مَا بَعْدَهَا، وَأَعُوذُ بِكَ مِنْ شَرِّ مَا فِي هَذِهِ اللَّيْلَةِ وَشَرِّ مَا بَعْدَهَا' },
+    { fr: 'Par Toi nous entrons dans le soir', count: 1, ar: 'اللَّهُمَّ بِكَ أَمْسَيْنَا، وَبِكَ أَصْبَحْنَا، وَبِكَ نَحْيَا، وَبِكَ نَمُوتُ، وَإِلَيْكَ الْمَصِيرُ' },
+    { fr: 'سيد الاستغفار — Le maître du pardon', count: 1, ar: 'اللَّهُمَّ أَنْتَ رَبِّي لَا إِلَهَ إِلَّا أَنْتَ، خَلَقْتَنِي وَأَنَا عَبْدُكَ، وَأَنَا عَلَى عَهْدِكَ وَوَعْدِكَ مَا اسْتَطَعْتُ، أَعُوذُ بِكَ مِنْ شَرِّ مَا صَنَعْتُ، أَبُوءُ لَكَ بِنِعْمَتِكَ عَلَيَّ، وَأَبُوءُ بِذَنْبِي فَاغْفِرْ لِي فَإِنَّهُ لَا يَغْفِرُ الذُّنُوبَ إِلَّا أَنْتَ' },
+    { fr: 'Agrément', count: 3, ar: 'رَضِيتُ بِاللَّهِ رَبًّا، وَبِالْإِسْلَامِ دِينًا، وَبِمُحَمَّدٍ صَلَّى اللَّهُ عَلَيْهِ وَسَلَّمَ نَبِيًّا' },
+    { fr: 'Protection contre tout mal créé', count: 3, ar: 'أَعُوذُ بِكَلِمَاتِ اللَّهِ التَّامَّاتِ مِنْ شَرِّ مَا خَلَقَ' },
+    { fr: 'Bien-être du corps', count: 3, ar: 'اللَّهُمَّ عَافِنِي فِي بَدَنِي، اللَّهُمَّ عَافِنِي فِي سَمْعِي، اللَّهُمَّ عَافِنِي فِي بَصَرِي، لَا إِلَهَ إِلَّا أَنْتَ' },
+    { fr: 'Allah me suffit', count: 7, ar: 'حَسْبِيَ اللَّهُ لَا إِلَهَ إِلَّا هُوَ، عَلَيْهِ تَوَكَّلْتُ، وَهُوَ رَبُّ الْعَرْشِ الْعَظِيمِ' },
+    { fr: 'Au nom d\'Allah', count: 3, ar: 'بِسْمِ اللَّهِ الَّذِي لَا يَضُرُّ مَعَ اسْمِهِ شَيْءٌ فِي الْأَرْضِ وَلَا فِي السَّمَاءِ، وَهُوَ السَّمِيعُ الْعَلِيمُ' },
+    { fr: 'Gloire et louange à Allah', count: 100, ar: 'سُبْحَانَ اللَّهِ وَبِحَمْدِهِ' },
+    { fr: 'Prière sur le Prophète ﷺ', count: 10, ar: 'اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ' },
+  ],
+};
+let adhkarMode = 'matin';
+function renderAdhkar(v) {
+  const list = ADHKAR[adhkarMode];
+  v.append(el(`<div><h1>${adhkarMode === 'matin' ? '🌅 Adhkar du matin' : '🌙 Adhkar du soir'}</h1>
+    <div class="seg" id="adhMode"><button data-m="matin" class="${adhkarMode === 'matin' ? 'active' : ''}">🌅 Matin</button><button data-m="soir" class="${adhkarMode === 'soir' ? 'active' : ''}">🌙 Soir</button></div>
+    <div class="hint">Touche un dhikr pour compter tes répétitions. Le PDF complet est dans Foi → Ressources.</div>
+    <div id="adhList"></div>
+    <a class="btn block gray" href="#/spirituel" style="margin-top:8px">← Foi</a></div>`));
+  v.querySelectorAll('#adhMode button').forEach(b => b.onclick = () => { adhkarMode = b.dataset.m; router(); });
+  const al = $('#adhList', v);
+  list.forEach(d => {
+    let c = 0;
+    const card = el(`<div class="card" style="cursor:pointer">
+      ${d.fr ? `<div class="s" style="margin-bottom:4px">${escape(d.fr)}</div>` : ''}
+      <div class="arabic">${d.ar}</div>
+      <div class="row between" style="margin-top:10px"><span class="chip">à répéter ×${d.count}</span><span class="chip gray" data-cnt>0 / ${d.count}</span></div>
+    </div>`);
+    card.onclick = () => { c = c < d.count ? c + 1 : 0; const b = $('[data-cnt]', card); b.textContent = c + ' / ' + d.count; b.className = 'chip ' + (c >= d.count ? 'green' : 'gray'); };
+    al.append(card);
+  });
 }
 
 /* ============================================================

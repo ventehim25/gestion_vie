@@ -132,6 +132,8 @@ textarea{resize:vertical;min-height:70px}
 .modal-actions{display:flex;gap:10px;margin-top:6px}
 .modal-actions .btn{flex:1}
 
+.arabic{direction:rtl;text-align:right;font-size:1.4rem;line-height:2.15;
+  font-family:'Amiri','Traditional Arabic','Scheherazade New','Noto Naskh Arabic',serif;color:var(--ink)}
 .empty{text-align:center;color:var(--muted);padding:24px 10px;font-size:.9rem}
 .hint{background:var(--teal-l);color:var(--teal-d);border-radius:12px;padding:10px 12px;font-size:.85rem;margin-bottom:12px}
 .divider{height:1px;background:var(--line);margin:14px 0}
