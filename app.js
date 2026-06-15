@@ -1397,6 +1397,13 @@ function renderSpirituel(v) {
     </div>
 
     <div class="card">
+      <h3>📚 Ressources (PDF)</h3>
+      <a class="btn block" href="https://archive.org/download/quran-mushaf-almadinah-warsh/quran-mushaf-almadinah-warsh.pdf" target="_blank" rel="noopener" style="margin-bottom:8px">📖 Coran complet — Warsh (PDF)</a>
+      <a class="btn block ghost" href="https://archive.org/download/azkar_202202/%D8%A3%D8%B0%D9%83%D8%A7%D8%B1%20%D8%A7%D9%84%D8%B5%D8%A8%D8%A7%D8%AD%20%D9%88%D8%A7%D9%84%D9%85%D8%B3%D8%A7%D8%A1.pdf" target="_blank" rel="noopener">🌅🌙 Adhkar du matin & du soir (PDF)</a>
+      <small style="display:block;margin-top:8px">Téléchargement depuis archive.org. Une fois ouvert, enregistre-le sur ton téléphone pour le lire hors-ligne.</small>
+    </div>
+
+    <div class="card">
       <div class="row between"><h3 style="margin:0">💎 Zakat (2,5 %)</h3><button class="btn ghost sm" id="zInfo">détail</button></div>
       <div class="row between" style="margin-top:6px"><span>Base (capital + épargne)</span><b>${fmtDH(zakatBase())}</b></div>
       <div class="row between"><span><b>Zakat à donner / an</b></span><b class="amt pos">${fmtDH(zakatDue())}</b></div>
