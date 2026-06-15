@@ -43,7 +43,9 @@ function seed() {
       { id: uid(), label: 'Loyer garage (maman)', amount: 0, account: 'Maman', cat: 'Loyer garage' },
     ],
     tasks: [],
-    spiritual: { prayers: {}, quran: [], sadaqa: [] },
+    echeances: [],
+    prayer: { adjust: { Fajr: 0, Dohr: 0, Asr: 0, Maghrib: 0, Icha: 0 } },
+    spiritual: { prayers: {}, quran: [], sadaqa: [], quranGoal: 2 },
     kids: [
       { id: uid(), name: 'Enfant 1', notes: '', items: [] },
       { id: uid(), name: 'Enfant 2', notes: '', items: [] },
@@ -62,6 +64,8 @@ function seed() {
       opening: { perso: 0, partage: 0 },
       trees: { me: 79, gm: 132 },
       sheep: { log: [] },
+      harvest: [],
+      agenda: [],
       tx: [],
     },
     projects: [
@@ -88,7 +92,10 @@ function migrate(d) {
   out.savings = Object.assign({}, s.savings, d.savings || {});
   if (!Array.isArray(out.savings.log)) out.savings.log = [];
   out.debts = Array.isArray(d.debts) ? d.debts : s.debts;
+  out.echeances = Array.isArray(d.echeances) ? d.echeances : s.echeances;
   out.reminder = Object.assign({}, s.reminder, d.reminder || {});
+  out.prayer = Object.assign({}, s.prayer, d.prayer || {});
+  out.prayer.adjust = Object.assign({}, s.prayer.adjust, (d.prayer && d.prayer.adjust) || {});
   out.mother = Object.assign({}, s.mother, d.mother || {});
   out.spiritual = Object.assign({}, s.spiritual, d.spiritual || {});
   const df = d.farm || {};
@@ -96,6 +103,8 @@ function migrate(d) {
     opening: Object.assign({}, s.farm.opening, df.opening || {}),
     trees: Object.assign({}, s.farm.trees, df.trees || {}),
     sheep: Object.assign({}, s.farm.sheep, df.sheep || {}),
+    harvest: Array.isArray(df.harvest) ? df.harvest : s.farm.harvest,
+    agenda: Array.isArray(df.agenda) ? df.agenda : s.farm.agenda,
     tx: Array.isArray(df.tx) ? df.tx : s.farm.tx,
   };
   return out;
@@ -161,6 +170,54 @@ function todayTotals() {
   return { dep: t.filter(x => x.type === 'depense').reduce((a, x) => a + (+x.amount || 0), 0) };
 }
 
+/* ---------- Horaires de prière (calcul astronomique, Kénitra) ---------- */
+const KENITRA = { lat: 34.261, lng: -6.5802 };
+const _dtr = d => d * Math.PI / 180, _rtd = r => r * 180 / Math.PI;
+const _sin = d => Math.sin(_dtr(d)), _cos = d => Math.cos(_dtr(d)), _tan = d => Math.tan(_dtr(d));
+const _asin = x => _rtd(Math.asin(x)), _acos = x => _rtd(Math.acos(x)), _atan2 = (y, x) => _rtd(Math.atan2(y, x)), _acot = x => _rtd(Math.atan(1 / x));
+const _fixH = h => ((h % 24) + 24) % 24, _fixA = a => ((a % 360) + 360) % 360;
+function _julian(y, m, d) { if (m <= 2) { y -= 1; m += 12; } const A = Math.floor(y / 100), B = 2 - A + Math.floor(A / 4); return Math.floor(365.25 * (y + 4716)) + Math.floor(30.6001 * (m + 1)) + d + B - 1524.5; }
+function _sunPos(jd) {
+  const D = jd - 2451545.0;
+  const g = _fixA(357.529 + 0.98560028 * D), q = _fixA(280.459 + 0.98564736 * D);
+  const L = _fixA(q + 1.915 * _sin(g) + 0.020 * _sin(2 * g));
+  const e = 23.439 - 0.00000036 * D;
+  const decl = _asin(_sin(e) * _sin(L));
+  const RA = _fixH(_atan2(_cos(e) * _sin(L), _cos(L)) / 15);
+  return { decl, eqt: q / 15 - RA };
+}
+function prayerTimes(date) {
+  const { lat, lng } = KENITRA;
+  const tz = -date.getTimezoneOffset() / 60;
+  const jd = _julian(date.getFullYear(), date.getMonth() + 1, date.getDate());
+  const { decl, eqt } = _sunPos(jd);
+  const noon = _fixH(12 - eqt);
+  const T = a => (1 / 15) * _acos((-_sin(a) - _sin(decl) * _sin(lat)) / (_cos(decl) * _cos(lat)));
+  const asrA = -_acot(1 + _tan(Math.abs(lat - decl)));
+  const adj = tz - lng / 15;
+  const o = DB.prayer.adjust || {};
+  const mk = (h, name) => _fixH(h + adj + ((+o[name] || 0) / 60));
+  return {
+    Fajr: mk(noon - T(18), 'Fajr'),
+    Chourouq: mk(noon - T(0.833), 'Chourouq'),
+    Dohr: mk(noon, 'Dohr'),
+    Asr: mk(noon + T(asrA), 'Asr'),
+    Maghrib: mk(noon + T(0.833), 'Maghrib'),
+    Icha: mk(noon + T(17), 'Icha'),
+  };
+}
+function fmtHM(h) { h = _fixH(h + 0.5 / 60); const hh = Math.floor(h); const mm = Math.floor((h - hh) * 60); return String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0'); }
+function nextPrayer(times) {
+  const now = new Date(); const nowH = now.getHours() + now.getMinutes() / 60;
+  const order = ['Fajr', 'Chourouq', 'Dohr', 'Asr', 'Maghrib', 'Icha'];
+  for (const k of order) if (times[k] > nowH) return { name: k, at: times[k] };
+  return { name: 'Fajr', at: times.Fajr, tomorrow: true };
+}
+
+/* ---------- Zakat ---------- */
+function zakatBase() { return (+DB.capital || 0) + savingsTotal(); }
+function zakatDue() { return zakatBase() * 0.025; }
+
 /* ============================================================
    ROUTER
    ============================================================ */
@@ -216,6 +273,8 @@ function renderHome(v) {
   const noTxToday = !DB.transactions.some(t => t.date === todayISO());
   const nowHM = new Date().toTimeString().slice(0, 5);
   const showReminder = DB.reminder.enabled && noTxToday && nowHM >= DB.reminder.time;
+  bumpEcheances();
+  const upcoming = DB.echeances.filter(e => daysUntil(e.date) <= 30).sort((a, b) => a.date.localeCompare(b.date)).slice(0, 4);
   const caisses = [
     ['💰 Capital (moi)', DB.capital, 'teal'],
     ['💸 On me doit (impayés)', owed, owed > 0 ? 'teal' : 'pos'],
@@ -250,6 +309,8 @@ function renderHome(v) {
       <div class="value ${dispo >= 0 ? 'pos' : 'neg'}" style="font-size:1.6rem;font-weight:800;margin-top:6px">${fmtDH(dispo)}</div>
       <small>${fixed === 0 ? 'Renseigne tes charges fixes dans Budget pour un chiffre réel.' : 'Ce qui te reste pour épargner / loyer / projets.'}</small>
     </div>
+
+    ${upcoming.length ? `<div class="section-title">⏰ Échéances proches</div><div class="card">${upcoming.map(e => { const dl = daysUntil(e.date); return `<div class="item"><span class="ic">⏰</span><span class="grow"><div class="t">${escape(e.label)}</div><div class="s">${e.date}</div></span><span class="chip ${dl <= 7 ? 'red' : ''}">${dl < 0 ? 'en retard' : dl === 0 ? "auj." : dl + ' j'}</span></div>`; }).join('')}</div>` : ''}
 
     <div class="section-title">Vue d'ensemble des caisses</div>
     <div class="card">
@@ -452,11 +513,36 @@ function renderPlanning(v) {
   const fmtDay = (iso) => new Date(iso + 'T00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
   const CATICON = { Famille: '👨‍👩‍👧', Business: '🚚', Perso: '🙂', Religion: '🕌', Maman: '💊' };
 
-  v.append(el(`<div><h1>📅 Planning (7 jours)</h1>
-    <div class="hint">Organise tournées (filtres), enfants, maman et moments de foi. Coche en fin de journée.</div>
+  v.append(el(`<div><h1>📅 Planning</h1>
+    <div class="section-title">⏰ Échéances à venir</div>
+    <div class="card" id="echeances"></div>
+    <button class="btn ghost block sm" id="addEch" style="margin-bottom:8px">+ Ajouter une échéance</button>
+
+    <div class="section-title">Tâches (7 jours)</div>
+    <div class="hint">Organise enfants, maman et moments de foi. Touche une tâche pour la modifier.</div>
     <div id="days"></div>
     <button class="btn fab" id="fab">＋</button>
   </div>`));
+
+  // Échéances
+  bumpEcheances();
+  const ec = $('#echeances', v);
+  const ech = DB.echeances.slice().sort((a, b) => a.date.localeCompare(b.date));
+  if (!ech.length) ec.append(el('<small>Aucune échéance. Ajoute assurance auto, vignette, CNSS…</small>'));
+  ech.forEach(e => {
+    const dleft = daysUntil(e.date);
+    const cls = dleft < 0 ? 'red' : dleft <= 7 ? 'red' : dleft <= 30 ? '' : 'green';
+    const label = dleft < 0 ? 'en retard' : dleft === 0 ? "aujourd'hui" : 'dans ' + dleft + ' j';
+    const row = el(`<div class="item"><span class="ic">⏰</span>
+      <span class="grow"><div class="t">${escape(e.label)}${e.recur && e.recur !== 'none' ? ' 🔁' : ''}</div><div class="s">${e.date}${e.note ? ' · ' + escape(e.note) : ''}</div></span>
+      <span class="chip ${cls}">${label}</span><button class="btn gray sm" data-x>✕</button></div>`);
+    row.querySelector('.grow').style.cursor = 'pointer';
+    row.querySelector('.grow').onclick = () => echeanceModal(e.id);
+    $('[data-x]', row).onclick = () => { DB.echeances = DB.echeances.filter(x => x.id !== e.id); save(); router(); };
+    ec.append(row);
+  });
+  $('#addEch', v).onclick = () => echeanceModal();
+
   const c = $('#days', v);
   days.forEach(d => {
     const list = DB.tasks.filter(t => t.date === d).sort((a, b) => (a.done - b.done));
@@ -493,6 +579,39 @@ function taskModal(date, id) {
     const title = $('#t_title', bg).value.trim(); if (!title) return;
     const o = { title, cat: $('#t_cat', bg).value, date: $('#t_date', bg).value };
     if (cur) Object.assign(cur, o); else DB.tasks.push(Object.assign({ id: uid(), done: false }, o));
+    save(); bg.remove(); router();
+  };
+}
+function daysUntil(iso) { const d = new Date(iso + 'T00:00'); const now = new Date(); now.setHours(0, 0, 0, 0); return Math.round((d - now) / 86400000); }
+function bumpEcheances() {
+  // fait avancer les échéances récurrentes passées vers la prochaine occurrence
+  let changed = false;
+  DB.echeances.forEach(e => {
+    if (!e.recur || e.recur === 'none') return;
+    let d = new Date(e.date + 'T00:00');
+    const now = new Date(); now.setHours(0, 0, 0, 0);
+    while (d < now) { if (e.recur === 'monthly') d.setMonth(d.getMonth() + 1); else d.setFullYear(d.getFullYear() + 1); changed = true; }
+    e.date = d.toISOString().slice(0, 10);
+  });
+  if (changed) persist();
+}
+function echeanceModal(id) {
+  const cur = id ? DB.echeances.find(e => e.id === id) : { label: '', date: todayISO(), note: '', recur: 'yearly' };
+  const body = `
+    ${field('Quoi ?', `<input id="e_l" value="${escape(cur.label)}" placeholder="ex: Assurance voiture" autofocus>`)}
+    ${field('Date limite', `<input id="e_d" type="date" value="${cur.date}">`)}
+    ${field('Répétition', `<select id="e_r">
+      <option value="none" ${cur.recur === 'none' ? 'selected' : ''}>Aucune</option>
+      <option value="monthly" ${cur.recur === 'monthly' ? 'selected' : ''}>Chaque mois</option>
+      <option value="yearly" ${cur.recur === 'yearly' ? 'selected' : ''}>Chaque année</option>
+    </select>`)}
+    ${field('Note', `<input id="e_n" value="${escape(cur.note || '')}" placeholder="ex: agence, montant…">`)}
+    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`;
+  const bg = modal(id ? 'Modifier l\'échéance' : 'Nouvelle échéance', body);
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => {
+    const o = { label: $('#e_l', bg).value.trim() || '(sans nom)', date: $('#e_d', bg).value, recur: $('#e_r', bg).value, note: $('#e_n', bg).value.trim() };
+    if (id) Object.assign(cur, o); else DB.echeances.push(Object.assign({ id: uid() }, o));
     save(); bg.remove(); router();
   };
 }
@@ -616,13 +735,19 @@ function renderMaman(v) {
   const mc = $('#meds', v);
   if (!DB.mother.meds.length) mc.append(el('<small>Aucun médicament enregistré.</small>'));
   DB.mother.meds.forEach(med => {
-    const row = el(`<div class="item"><span class="ic">💊</span><span class="grow"><div class="t">${escape(med.name)}</div><div class="s">${escape(med.schedule || '')}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
+    const times = (med.times || []).join(' · ');
+    const row = el(`<div class="item"><span class="ic">💊</span><span class="grow"><div class="t">${escape(med.name)}</div><div class="s">${escape(med.schedule || '')}${times ? ' · ⏰ ' + escape(times) : ''}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
     $('[data-x]', row).onclick = () => { DB.mother.meds = DB.mother.meds.filter(x => x !== med); save(); router(); };
     mc.append(row);
   });
   $('#addMed', v).onclick = () => {
-    const bg = modal('Médicament', `${field('Nom', '<input id="m_n" autofocus>')}${field('Posologie / horaire', '<input id="m_s" placeholder="ex: 1 matin, 1 soir">')}<div class="modal-actions"><button class="btn" id="ok">Ajouter</button></div>`);
-    $('#ok', bg).onclick = () => { const n = $('#m_n', bg).value.trim(); if (!n) return; DB.mother.meds.push({ name: n, schedule: $('#m_s', bg).value.trim() }); save(); bg.remove(); router(); };
+    const bg = modal('Médicament', `${field('Nom', '<input id="m_n" autofocus>')}${field('Posologie', '<input id="m_s" placeholder="ex: 1 comprimé">')}${field('Heures de prise (ex: 08:00, 14:00, 20:00)', '<input id="m_h" placeholder="08:00, 20:00">')}<div class="modal-actions"><button class="btn" id="ok">Ajouter</button></div>`);
+    $('#ok', bg).onclick = () => {
+      const n = $('#m_n', bg).value.trim(); if (!n) return;
+      const times = $('#m_h', bg).value.split(',').map(s => s.trim()).filter(s => /^\d{1,2}:\d{2}$/.test(s));
+      DB.mother.meds.push({ name: n, schedule: $('#m_s', bg).value.trim(), times });
+      save(); bg.remove(); scheduleMedReminder(); router();
+    };
   };
 
   // CNSS
@@ -789,6 +914,18 @@ function renderFerme(v) {
       ${aG.dep.length ? `<div style="margin-top:8px"><small>Détail des dépenses oliviers (date & montant)</small>${datedExpenseRows(aG.dep)}</div>` : '<small>Aucune dépense oliviers cette année.</small>'}
     </div>
 
+    <div class="section-title">🫒 Récolte d'olives</div>
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">Saisons</h3><button class="btn ghost sm" id="addHarvest">+ Récolte</button></div>
+      <div id="harvestList" style="margin-top:6px"></div>
+    </div>
+
+    <div class="section-title">📌 Agenda agricole</div>
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">Travaux à faire</h3><button class="btn ghost sm" id="addAgenda">+ Tâche</button></div>
+      <div id="agendaList" style="margin-top:6px"></div>
+    </div>
+
     <div class="section-title">Mouvements</div>
     <div class="seg" id="farmFilter" style="margin-bottom:10px">
       <button data-f="all" class="${farmFilter === 'all' ? 'active' : ''}">Tout</button>
@@ -812,6 +949,49 @@ function renderFerme(v) {
     const bg = modal('Solde de départ — ' + FARM_CAISSES[c], `<p><small>Argent déjà présent dans cette caisse avant le suivi.</small></p>${field('Montant (DH)', `<input id="o_v" type="number" inputmode="decimal" value="${DB.farm.opening[c] || ''}">`)}<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
     $('#ok', bg).onclick = () => { DB.farm.opening[c] = +$('#o_v', bg).value || 0; save(); bg.remove(); router(); };
   });
+
+  // Récolte d'olives
+  const hl = $('#harvestList', v);
+  const harv = DB.farm.harvest.slice().sort((a, b) => (b.year || 0) - (a.year || 0));
+  if (!harv.length) hl.append(el('<small>Note chaque saison : kg récoltés, litres d\'huile, prix de vente.</small>'));
+  harv.forEach(h => {
+    const row = el(`<div class="item"><span class="ic">🫒</span><span class="grow"><div class="t">Saison ${h.year} — ${h.kg || 0} kg · ${h.litres || 0} L d'huile</div><div class="s">${h.prix ? 'Vente : ' + fmtDH(h.prix) : ''}${h.note ? ' · ' + escape(h.note) : ''}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-x]', row).onclick = () => { DB.farm.harvest = DB.farm.harvest.filter(x => x.id !== h.id); save(); router(); };
+    hl.append(row);
+  });
+  $('#addHarvest', v).onclick = () => {
+    const bg = modal('Récolte d\'olives', `
+      ${field('Année / saison', `<input id="h_y" type="number" inputmode="numeric" value="${new Date().getFullYear()}">`)}
+      ${field('Kg d\'olives récoltés', '<input id="h_kg" type="number" inputmode="decimal">')}
+      ${field('Litres d\'huile', '<input id="h_l" type="number" inputmode="decimal">')}
+      ${field('Montant des ventes (DH)', '<input id="h_p" type="number" inputmode="decimal">')}
+      ${field('Note', '<input id="h_n" placeholder="ex: pressoir, prix/L…">')}
+      <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
+    $('#cancel', bg).onclick = () => bg.remove();
+    $('#ok', bg).onclick = () => { DB.farm.harvest.push({ id: uid(), year: +$('#h_y', bg).value || new Date().getFullYear(), kg: +$('#h_kg', bg).value || 0, litres: +$('#h_l', bg).value || 0, prix: +$('#h_p', bg).value || 0, note: $('#h_n', bg).value.trim() }); save(); bg.remove(); router(); };
+  };
+
+  // Agenda agricole
+  const al = $('#agendaList', v);
+  const ag = DB.farm.agenda.slice().sort((a, b) => (a.done - b.done) || a.date.localeCompare(b.date));
+  if (!ag.length) al.append(el('<small>Ajoute les travaux : taille, irrigation, traitement, récolte…</small>'));
+  ag.forEach(a => {
+    const dl = daysUntil(a.date);
+    const row = el(`<div class="item"><span class="check ${a.done ? 'on' : ''}">${a.done ? '✓' : ''}</span><span class="ic">🌳</span>
+      <span class="grow"><div class="t" style="${a.done ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(a.task)}</div><div class="s">${a.date}${!a.done && dl >= 0 && dl <= 14 ? ' · dans ' + dl + ' j' : ''}</div></span>
+      <button class="btn gray sm" data-x>✕</button></div>`);
+    $('.check', row).onclick = () => { a.done = !a.done; save(); router(); };
+    $('[data-x]', row).onclick = () => { DB.farm.agenda = DB.farm.agenda.filter(x => x.id !== a.id); save(); router(); };
+    al.append(row);
+  });
+  $('#addAgenda', v).onclick = () => {
+    const bg = modal('Travail agricole', `
+      ${field('Tâche', '<input id="a_t" placeholder="ex: taille des oliviers, irrigation…" autofocus>')}
+      ${field('Date prévue', `<input id="a_d" type="date" value="${todayISO()}">`)}
+      <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Ajouter</button></div>`);
+    $('#cancel', bg).onclick = () => bg.remove();
+    $('#ok', bg).onclick = () => { const t = $('#a_t', bg).value.trim(); if (!t) return; DB.farm.agenda.push({ id: uid(), task: t, date: $('#a_d', bg).value, done: false }); save(); bg.remove(); router(); };
+  };
 
   // Arbres
   $('#editTrees', v).onclick = () => {
@@ -894,10 +1074,27 @@ function renderSpirituel(v) {
   const done = DB.spiritual.prayers[t] || [];
   const sadaqaMonth = DB.spiritual.sadaqa.filter(s => monthOf(s.date) === monthOf(t)).reduce((a, s) => a + (+s.amount || 0), 0);
   const quranWeek = DB.spiritual.quran.slice(-7).reduce((a, q) => a + (+q.pages || 0), 0);
+  const times = prayerTimes(new Date());
+  const next = nextPrayer(times);
+  const PR_LABEL = { Fajr: 'Fajr', Chourouq: 'Chourouq', Dohr: 'Dohr', Asr: 'Asr', Maghrib: 'Maghrib', Icha: 'Icha' };
+  const totalPages = DB.spiritual.quran.reduce((a, q) => a + (+q.pages || 0), 0);
+  const goalDay = +DB.spiritual.quranGoal || 2;
+  const khatmaPage = totalPages % 604;
+  const khatmas = Math.floor(totalPages / 604);
+  const daysLeft = goalDay ? Math.ceil((604 - khatmaPage) / goalDay) : 0;
 
   v.append(el(`<div><h1>🕌 Spiritualité</h1>
+
     <div class="card">
-      <h3>Prières d'aujourd'hui</h3>
+      <div class="row between"><h3 style="margin:0">🕌 Horaires de prière — Kénitra</h3><button class="btn gray sm" id="adjPray">ajuster</button></div>
+      <div class="prayers" style="margin-top:8px">
+        ${['Fajr', 'Chourouq', 'Dohr', 'Asr', 'Maghrib', 'Icha'].map(k => `<div class="pray ${next.name === k ? 'on' : ''}" style="cursor:default">${PR_LABEL[k]}<div style="font-weight:800;margin-top:2px">${fmtHM(times[k])}</div></div>`).join('')}
+      </div>
+      <small>Prochaine : <b>${PR_LABEL[next.name]}</b> à ${fmtHM(next.at)}${next.tomorrow ? ' (demain)' : ''}. Calcul approximatif — si besoin, touche « ajuster ».</small>
+    </div>
+
+    <div class="card">
+      <h3>Prières faites aujourd'hui</h3>
       <div class="prayers" id="prayers">
         ${PRAYERS.map(p => `<div class="pray ${done.includes(p) ? 'on' : ''}" data-p="${p}">${p}</div>`).join('')}
       </div>
@@ -907,6 +1104,19 @@ function renderSpirituel(v) {
     <div class="grid2">
       <div class="stat"><div class="label">Coran (7 j.)</div><div class="value teal">${quranWeek} pages</div></div>
       <div class="stat"><div class="label">Sadaqa (mois)</div><div class="value teal">${fmtDH(sadaqaMonth)}</div></div>
+    </div>
+
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">📗 Khatma (finir le Coran)</h3><button class="btn gray sm" id="khGoal">objectif</button></div>
+      <div class="row between" style="margin-top:6px"><span>Page ${khatmaPage} / 604</span><b>${khatmas} khatma(s) ✓</b></div>
+      <div class="bar"><span style="width:${khatmaPage / 604 * 100}%"></span></div>
+      <small>Objectif ${goalDay} page(s)/jour → fini dans ~${daysLeft} jour(s). Ajoute ta lecture ci-dessous.</small>
+    </div>
+
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">💎 Zakat (2,5 %)</h3><button class="btn ghost sm" id="zInfo">détail</button></div>
+      <div class="row between" style="margin-top:6px"><span>Base (capital + épargne)</span><b>${fmtDH(zakatBase())}</b></div>
+      <div class="row between"><span><b>Zakat à donner / an</b></span><b class="amt pos">${fmtDH(zakatDue())}</b></div>
     </div>
 
     <div class="card">
@@ -920,11 +1130,31 @@ function renderSpirituel(v) {
     </div>
   </div>`));
 
-  v.querySelectorAll('.pray').forEach(p => p.onclick = () => {
+  v.querySelectorAll('.pray[data-p]').forEach(p => p.onclick = () => {
     const set = new Set(DB.spiritual.prayers[t] || []);
     set.has(p.dataset.p) ? set.delete(p.dataset.p) : set.add(p.dataset.p);
     DB.spiritual.prayers[t] = [...set]; save(); router();
   });
+  $('#adjPray', v).onclick = () => {
+    const o = DB.prayer.adjust;
+    const body = ['Fajr', 'Dohr', 'Asr', 'Maghrib', 'Icha'].map(k => field(k + ' (± minutes)', `<input id="adj_${k}" type="number" inputmode="numeric" value="${+o[k] || 0}">`)).join('') + '<div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>';
+    const bg = modal('Ajuster les horaires', '<p><small>Compare avec l\'horaire officiel de ta mosquée et corrige en minutes (+ ou −).</small></p>' + body);
+    $('#cancel', bg).onclick = () => bg.remove();
+    $('#ok', bg).onclick = () => { ['Fajr', 'Dohr', 'Asr', 'Maghrib', 'Icha'].forEach(k => o[k] = +$('#adj_' + k, bg).value || 0); save(); bg.remove(); router(); };
+  };
+  $('#khGoal', v).onclick = () => {
+    const bg = modal('Objectif Khatma', `${field('Pages à lire par jour', `<input id="kg" type="number" inputmode="numeric" value="${+DB.spiritual.quranGoal || 2}">`)}<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
+    $('#ok', bg).onclick = () => { DB.spiritual.quranGoal = +$('#kg', bg).value || 1; save(); bg.remove(); router(); };
+  };
+  $('#zInfo', v).onclick = () => {
+    modal('Zakat', `<p><small>La Zakat = <b>2,5 %</b> de l'épargne gardée une année lunaire (au-dessus du nisab).</small></p>
+      <div class="row between"><span>Capital</span><b>${fmtDH(+DB.capital || 0)}</b></div>
+      <div class="row between"><span>Épargne (fonds)</span><b>${fmtDH(savingsTotal())}</b></div>
+      <div class="divider"></div>
+      <div class="row between"><span><b>Base</b></span><b>${fmtDH(zakatBase())}</b></div>
+      <div class="row between"><span><b>Zakat (2,5 %)</b></span><b class="amt pos">${fmtDH(zakatDue())}</b></div>
+      <div class="modal-actions"><button class="btn" id="ok">Fermer</button></div>`).querySelector('#ok').onclick = e => e.target.closest('.modal-bg').remove();
+  };
 
   const ql = $('#qlist', v);
   const q = DB.spiritual.quran.slice().reverse().slice(0, 10);
@@ -963,9 +1193,11 @@ function renderProjets(v) {
   projects.forEach(p => { const c = p.type || 'Autre'; (groups[c] = groups[c] || []).push(p); });
   v.append(el(`<div><h1>🎯 Projets de vie</h1>
     <div class="hint">Tes options classées par catégorie. Remplis budget, lieu, métrage, paiement, délai… pour tout comparer et décider sereinement.</div>
+    <button class="btn block ghost" id="simBtn" style="margin-bottom:10px">🏦 Simulateur immobilier (louer / acheter / Mourabaha)</button>
     <div id="plist"></div>
     <button class="btn block ghost" id="addP">+ Nouveau projet</button>
   </div>`));
+  $('#simBtn', v).onclick = () => simulatorModal();
   const pc = $('#plist', v);
   Object.keys(groups).forEach(cat => {
     pc.append(el(`<div class="section-title">${CAT_ICON[cat] || '📦'} ${escape(cat)} (${groups[cat].length})</div>`));
@@ -1002,6 +1234,43 @@ function renderProjets(v) {
     });
   });
   $('#addP', v).onclick = () => projModal();
+}
+function simulatorModal() {
+  const body = `
+    <p><small>Estime ta mensualité et compare avec une location. Chiffres indicatifs.</small></p>
+    ${field('Prix du bien (DH)', '<input id="sm_prix" type="number" inputmode="decimal" value="600000" autofocus>')}
+    ${field('Apport / avance (DH)', '<input id="sm_apport" type="number" inputmode="decimal" value="300000">')}
+    ${field('Durée (années)', '<input id="sm_an" type="number" inputmode="numeric" value="15">')}
+    <div class="seg" id="sm_mode"><button data-m="mourabaha" class="active">Mourabaha</button><button data-m="credit">Crédit (taux)</button></div>
+    ${field('Marge / taux annuel (%)', '<input id="sm_taux" type="number" inputmode="decimal" value="6">')}
+    ${field('Loyer actuel pour comparer (DH/mois)', '<input id="sm_loyer" type="number" inputmode="decimal" value="2500">')}
+    <div id="sm_out" class="card" style="background:var(--teal-l);margin-top:6px"></div>
+    <div class="modal-actions"><button class="btn" id="ok">Fermer</button></div>`;
+  const bg = modal('🏦 Simulateur immobilier', body);
+  let mode = 'mourabaha';
+  const calc = () => {
+    const prix = +$('#sm_prix', bg).value || 0, apport = +$('#sm_apport', bg).value || 0;
+    const n = (+$('#sm_an', bg).value || 1) * 12, taux = +$('#sm_taux', bg).value || 0;
+    const principal = Math.max(0, prix - apport);
+    let mensual, total;
+    if (mode === 'mourabaha') { total = principal * (1 + taux / 100); mensual = total / n; }
+    else { const r = taux / 100 / 12; mensual = r ? principal * r / (1 - Math.pow(1 + r, -n)) : principal / n; total = mensual * n; }
+    const surcout = total - principal;
+    const loyer = +$('#sm_loyer', bg).value || 0;
+    const diff = mensual - loyer;
+    $('#sm_out', bg).innerHTML = `
+      <div class="row between"><span>Montant à financer</span><b>${fmtDH(principal)}</b></div>
+      <div class="row between"><span><b>Mensualité</b></span><b style="color:var(--teal-d);font-size:1.1rem">${fmtDH(mensual)}/mois</b></div>
+      <div class="row between"><span>Coût total payé</span><b>${fmtDH(total)}</b></div>
+      <div class="row between"><span>Surcoût (${mode === 'mourabaha' ? 'marge' : 'intérêts'})</span><b>${fmtDH(surcout)}</b></div>
+      <div class="divider"></div>
+      <div class="row between"><span>vs loyer (${fmtDH(loyer)})</span><b style="color:${diff > 0 ? 'var(--red)' : 'var(--green)'}">${diff > 0 ? '+' : ''}${fmtDH(diff)}/mois</b></div>
+      <small>${diff > 0 ? 'Acheter coûte plus par mois, mais tu deviens propriétaire.' : 'La mensualité est ≤ ton loyer : acheter est intéressant.'}</small>`;
+  };
+  bg.querySelectorAll('#sm_mode button').forEach(b => b.onclick = () => { bg.querySelectorAll('#sm_mode button').forEach(x => x.classList.remove('active')); b.classList.add('active'); mode = b.dataset.m; calc(); });
+  bg.querySelectorAll('input').forEach(i => i.addEventListener('input', calc));
+  $('#ok', bg).onclick = () => bg.remove();
+  calc();
 }
 function infoModal(p) {
   const body = `
@@ -1201,9 +1470,31 @@ function scheduleReminder() {
 }
 
 /* ============================================================
+   RAPPEL MÉDICAMENTS MAMAN (notification à l'heure de prise)
+   ============================================================ */
+let medTimer = null;
+function scheduleMedReminder() {
+  if (medTimer) { clearTimeout(medTimer); medTimer = null; }
+  const all = [];
+  (DB.mother.meds || []).forEach(med => (med.times || []).forEach(hm => all.push({ name: med.name, hm })));
+  if (!all.length) return;
+  const now = new Date(); const nowMin = now.getHours() * 60 + now.getMinutes();
+  let best = null;
+  all.forEach(x => { const [h, mi] = x.hm.split(':').map(Number); let mins = h * 60 + mi - nowMin; if (mins <= 0) mins += 1440; if (!best || mins < best.mins) best = { mins, name: x.name, hm: x.hm }; });
+  if (!best) return;
+  medTimer = setTimeout(() => {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try { new Notification('💊 Médicament de maman', { body: best.name + ' — ' + best.hm, icon: 'icons/icon-192.png' }); } catch (e) {}
+    }
+    scheduleMedReminder();
+  }, Math.min(best.mins * 60000, 2147483000));
+}
+
+/* ============================================================
    INIT
    ============================================================ */
 $('#todayDate').textContent = new Date().toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'long' });
 router();
 scheduleReminder();
+scheduleMedReminder();
 syncOnLoad();
