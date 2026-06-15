@@ -44,6 +44,7 @@ function seed() {
     ],
     tasks: [],
     echeances: [],
+    meals: { plan: {}, stock: [] },
     prayer: { adjust: { Fajr: 0, Dohr: 0, Asr: 0, Maghrib: 0, Icha: 0 } },
     spiritual: { prayers: {}, quran: [], sadaqa: [], quranGoal: 2 },
     kids: [
@@ -93,6 +94,7 @@ function migrate(d) {
   if (!Array.isArray(out.savings.log)) out.savings.log = [];
   out.debts = Array.isArray(d.debts) ? d.debts : s.debts;
   out.echeances = Array.isArray(d.echeances) ? d.echeances : s.echeances;
+  out.meals = { plan: (d.meals && d.meals.plan) || {}, stock: (d.meals && Array.isArray(d.meals.stock)) ? d.meals.stock : [] };
   out.reminder = Object.assign({}, s.reminder, d.reminder || {});
   out.prayer = Object.assign({}, s.prayer, d.prayer || {});
   out.prayer.adjust = Object.assign({}, s.prayer.adjust, (d.prayer && d.prayer.adjust) || {});
@@ -271,7 +273,7 @@ function exportEcheanceICS(e) {
    ============================================================ */
 const routes = {
   '/': renderHome, 'budget': renderBudget, 'planning': renderPlanning,
-  'famille': renderFamille, 'maman': renderMaman, 'ferme': renderFerme, 'spirituel': renderSpirituel, 'projets': renderProjets,
+  'repas': renderRepas, 'famille': renderFamille, 'maman': renderMaman, 'ferme': renderFerme, 'spirituel': renderSpirituel, 'projets': renderProjets,
   'reglages': renderReglages,
 };
 function currentRoute() { return (location.hash.replace(/^#\//, '') || '/'); }
@@ -661,6 +663,92 @@ function echeanceModal(id) {
   $('#ok', bg).onclick = () => {
     const o = { label: $('#e_l', bg).value.trim() || '(sans nom)', date: $('#e_d', bg).value, recur: $('#e_r', bg).value, note: $('#e_n', bg).value.trim() };
     if (id) Object.assign(cur, o); else DB.echeances.push(Object.assign({ id: uid() }, o));
+    save(); bg.remove(); router();
+  };
+}
+
+/* ============================================================
+   REPAS  (planning des repas par semaine + stock maison)
+   ============================================================ */
+let mealWeek = weekStartISO(new Date());
+function weekStartISO(d) { const x = new Date(d); const off = (x.getDay() + 6) % 7; x.setDate(x.getDate() - off); x.setHours(0, 0, 0, 0); return x.toISOString().slice(0, 10); }
+const MEAL_SLOTS = [['matin', '🌅 Petit-déjeuner'], ['midi', '☀️ Déjeuner'], ['soir', '🌙 Dîner']];
+function renderRepas(v) {
+  const start = new Date(mealWeek + 'T00:00');
+  const days = [];
+  for (let i = 0; i < 7; i++) { const d = new Date(start); d.setDate(start.getDate() + i); days.push(d.toISOString().slice(0, 10)); }
+  const end = days[6];
+  const fmtD = iso => new Date(iso + 'T00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
+  const fmtShort = iso => new Date(iso + 'T00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+
+  v.append(el(`<div><h1>🍽️ Repas</h1>
+    <div class="hint">Planifie les repas de la semaine <b>selon le stock</b> de la maison (affiché ci-dessous). Touche un aliment du stock pour l'ajouter à un repas.</div>
+
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">🧺 Stock de la maison</h3><button class="btn ghost sm" id="addStock">+ Aliment</button></div>
+      <div id="stockList" style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+
+    <div class="card">
+      <div class="row between">
+        <button class="btn gray sm" id="wPrev">‹</button>
+        <b>Semaine du ${fmtShort(mealWeek)} au ${fmtShort(end)}</b>
+        <button class="btn gray sm" id="wNext">›</button>
+      </div>
+    </div>
+
+    <div id="mealDays"></div>
+  </div>`));
+
+  // Stock chips
+  const sc = $('#stockList', v);
+  if (!DB.meals.stock.length) sc.append(el('<small>Stock vide. Ajoute ce que tu as : poulet, légumes, poisson, huile d\'olive, café…</small>'));
+  DB.meals.stock.forEach(it => {
+    const chip = el(`<span class="chip" style="cursor:pointer;display:inline-flex;align-items:center;gap:6px;padding:6px 10px">🍅 ${escape(it.name)}<b data-rm style="color:var(--red)">✕</b></span>`);
+    chip.onclick = (e) => { if (e.target.hasAttribute('data-rm')) return; pickMealForStock(it.name, days); };
+    chip.querySelector('[data-rm]').onclick = (e) => { e.stopPropagation(); DB.meals.stock = DB.meals.stock.filter(x => x.id !== it.id); save(); router(); };
+    sc.append(chip);
+  });
+  $('#addStock', v).onclick = () => {
+    const bg = modal('Ajouter au stock', `${field('Aliment', '<input id="st_n" placeholder="ex: poulet, tomates, lait…" autofocus>')}<div class="modal-actions"><button class="btn" id="ok">Ajouter</button></div>`);
+    $('#ok', bg).onclick = () => { const n = $('#st_n', bg).value.trim(); if (!n) return; DB.meals.stock.push({ id: uid(), name: n }); save(); bg.remove(); router(); };
+  };
+
+  // Week nav
+  $('#wPrev', v).onclick = () => { const d = new Date(mealWeek + 'T00:00'); d.setDate(d.getDate() - 7); mealWeek = d.toISOString().slice(0, 10); router(); };
+  $('#wNext', v).onclick = () => { const d = new Date(mealWeek + 'T00:00'); d.setDate(d.getDate() + 7); mealWeek = d.toISOString().slice(0, 10); router(); };
+
+  // Days
+  const md = $('#mealDays', v);
+  const todayI = todayISO();
+  days.forEach(d => {
+    const plan = DB.meals.plan[d] || {};
+    const card = el(`<div class="card"><h3 style="text-transform:capitalize;margin-bottom:8px">${fmtD(d)}${d === todayI ? ' · <span class="chip">aujourd\'hui</span>' : ''}</h3>
+      ${MEAL_SLOTS.map(([k, lab]) => `<label class="field" style="margin-bottom:8px">${lab}<input data-meal="${d}" data-slot="${k}" value="${escape(plan[k] || '')}" placeholder="…"></label>`).join('')}
+    </div>`);
+    card.querySelectorAll('[data-meal]').forEach(inp => inp.onchange = () => {
+      const day = inp.dataset.meal, slot = inp.dataset.slot;
+      DB.meals.plan[day] = DB.meals.plan[day] || {};
+      DB.meals.plan[day][slot] = inp.value.trim();
+      save();
+    });
+    md.append(card);
+  });
+}
+function pickMealForStock(name, days) {
+  const todayI = todayISO();
+  const defaultDay = days.includes(todayI) ? todayI : days[0];
+  const body = `
+    <p><small>Ajouter « <b>${escape(name)}</b> » à quel repas ?</small></p>
+    ${field('Jour', `<select id="pm_d">${days.map(d => `<option value="${d}" ${d === defaultDay ? 'selected' : ''}>${new Date(d + 'T00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' })}</option>`).join('')}</select>`)}
+    ${field('Repas', `<select id="pm_s">${MEAL_SLOTS.map(([k, lab]) => `<option value="${k}">${lab}</option>`).join('')}</select>`)}
+    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Ajouter</button></div>`;
+  const bg = modal('Ajouter au repas', body);
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => {
+    const d = $('#pm_d', bg).value, s = $('#pm_s', bg).value;
+    DB.meals.plan[d] = DB.meals.plan[d] || {};
+    DB.meals.plan[d][s] = (DB.meals.plan[d][s] ? DB.meals.plan[d][s] + ' + ' : '') + name;
     save(); bg.remove(); router();
   };
 }

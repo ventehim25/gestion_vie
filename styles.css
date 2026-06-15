@@ -109,8 +109,8 @@ textarea{resize:vertical;min-height:70px}
   background:#fff;border-top:1px solid var(--line);
   padding-bottom:env(safe-area-inset-bottom);box-shadow:0 -1px 4px rgba(0,0,0,.04)}
 .tab{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;
-  padding:8px 1px 6px;font-size:1.1rem;color:var(--muted)}
-.tab span{font-size:.56rem;font-weight:600;white-space:nowrap}
+  padding:8px 1px 6px;font-size:1.05rem;color:var(--muted)}
+.tab span{font-size:.52rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
 .tab.active{color:var(--teal)}
 
 /* Modal */
