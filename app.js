@@ -1943,12 +1943,40 @@ const ADHKAR = {
     { fr: 'Gloire et louange à Allah', count: 100, ar: 'سُبْحَانَ اللَّهِ وَبِحَمْدِهِ' },
     { fr: 'Prière sur le Prophète ﷺ', count: 10, ar: 'اللَّهُمَّ صَلِّ وَسَلِّمْ عَلَى نَبِيِّنَا مُحَمَّدٍ' },
   ],
+  priere: [
+    { fr: 'Istighfar', count: 3, ar: 'أَسْتَغْفِرُ اللَّهَ' },
+    { fr: 'Après le salâm', count: 1, ar: 'اللَّهُمَّ أَنْتَ السَّلَامُ، وَمِنْكَ السَّلَامُ، تَبَارَكْتَ يَا ذَا الْجَلَالِ وَالْإِكْرَامِ' },
+    { fr: 'Tahlîl', count: 1, ar: 'لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ، اللَّهُمَّ لَا مَانِعَ لِمَا أَعْطَيْتَ، وَلَا مُعْطِيَ لِمَا مَنَعْتَ، وَلَا يَنْفَعُ ذَا الْجَدِّ مِنْكَ الْجَدُّ' },
+    { fr: 'Aide-moi à T\'évoquer', count: 1, ar: 'اللَّهُمَّ أَعِنِّي عَلَى ذِكْرِكَ وَشُكْرِكَ وَحُسْنِ عِبَادَتِكَ' },
+    { fr: 'Gloire à Allah', count: 33, ar: 'سُبْحَانَ اللَّهِ' },
+    { fr: 'Louange à Allah', count: 33, ar: 'الْحَمْدُ لِلَّهِ' },
+    { fr: 'Allah est le plus grand', count: 33, ar: 'اللَّهُ أَكْبَرُ' },
+    { fr: 'Pour compléter cent', count: 1, ar: 'لَا إِلَهَ إِلَّا اللَّهُ وَحْدَهُ لَا شَرِيكَ لَهُ، لَهُ الْمُلْكُ وَلَهُ الْحَمْدُ وَهُوَ عَلَى كُلِّ شَيْءٍ قَدِيرٌ' },
+    { fr: 'Ayat al-Kursi (après chaque prière)', count: 1, ar: 'اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ۚ لَّهُ مَا فِي السَّمَاوَاتِ وَمَا فِي الْأَرْضِ ... وَهُوَ الْعَلِيُّ الْعَظِيمُ' },
+    { fr: 'Les 3 sourates protectrices (×3 après Fajr et Maghrib)', count: 1, ar: 'الإخلاص ﴿قُلْ هُوَ اللَّهُ أَحَدٌ﴾ ، الفلق ﴿قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ﴾ ، الناس ﴿قُلْ أَعُوذُ بِرَبِّ النَّاسِ﴾' },
+  ],
+  sommeil: [
+    { fr: 'Souffler dans les mains avec les 3 sourates, puis se passer sur le corps', count: 3, ar: 'قُلْ هُوَ اللَّهُ أَحَدٌ ... ﴿ قُلْ أَعُوذُ بِرَبِّ الْفَلَقِ ﴾ ... ﴿ قُلْ أَعُوذُ بِرَبِّ النَّاسِ ﴾' },
+    { fr: 'Ayat al-Kursi', count: 1, ar: 'اللَّهُ لَا إِلَٰهَ إِلَّا هُوَ الْحَيُّ الْقَيُّومُ ۚ لَا تَأْخُذُهُ سِنَةٌ وَلَا نَوْمٌ ... وَهُوَ الْعَلِيُّ الْعَظِيمُ' },
+    { fr: 'Les 2 derniers versets de Al-Baqara', count: 1, ar: 'آمَنَ الرَّسُولُ بِمَا أُنْزِلَ إِلَيْهِ مِنْ رَبِّهِ وَالْمُؤْمِنُونَ ... ﴿ آخر آيتين من سورة البقرة ﴾' },
+    { fr: 'En Ton nom, ô Allah, je meurs et je vis', count: 1, ar: 'بِاسْمِكَ اللَّهُمَّ أَمُوتُ وَأَحْيَا' },
+    { fr: 'Tasbîh du coucher', count: 1, ar: 'سُبْحَانَ اللَّهِ (٣٣) ، الْحَمْدُ لِلَّهِ (٣٣) ، اللَّهُ أَكْبَرُ (٣٤)' },
+    { fr: 'Je me remets à Toi', count: 1, ar: 'اللَّهُمَّ أَسْلَمْتُ نَفْسِي إِلَيْكَ، وَفَوَّضْتُ أَمْرِي إِلَيْكَ، وَوَجَّهْتُ وَجْهِي إِلَيْكَ، وَأَلْجَأْتُ ظَهْرِي إِلَيْكَ، رَغْبَةً وَرَهْبَةً إِلَيْكَ، لَا مَلْجَأَ وَلَا مَنْجَا مِنْكَ إِلَّا إِلَيْكَ، آمَنْتُ بِكِتَابِكَ الَّذِي أَنْزَلْتَ، وَبِنَبِيِّكَ الَّذِي أَرْسَلْتَ' },
+    { fr: 'Protège-moi de Ton châtiment', count: 3, ar: 'اللَّهُمَّ قِنِي عَذَابَكَ يَوْمَ تَبْعَثُ عِبَادَكَ' },
+    { fr: 'Louange à Celui qui nous a nourris et abrités', count: 1, ar: 'الْحَمْدُ لِلَّهِ الَّذِي أَطْعَمَنَا وَسَقَانَا، وَكَفَانَا، وَآوَانَا، فَكَمْ مِمَّنْ لَا كَافِيَ لَهُ وَلَا مُؤْوِيَ' },
+  ],
 };
+const ADHKAR_TITLES = { matin: '🌅 Adhkar du matin', soir: '🌙 Adhkar du soir', priere: '🕌 Adhkar après la prière', sommeil: '😴 Adhkar du sommeil' };
 let adhkarMode = 'matin';
 function renderAdhkar(v) {
   const list = ADHKAR[adhkarMode];
-  v.append(el(`<div><h1>${adhkarMode === 'matin' ? '🌅 Adhkar du matin' : '🌙 Adhkar du soir'}</h1>
-    <div class="seg" id="adhMode"><button data-m="matin" class="${adhkarMode === 'matin' ? 'active' : ''}">🌅 Matin</button><button data-m="soir" class="${adhkarMode === 'soir' ? 'active' : ''}">🌙 Soir</button></div>
+  v.append(el(`<div><h1>${ADHKAR_TITLES[adhkarMode]}</h1>
+    <div class="seg" id="adhMode" style="flex-wrap:wrap">
+      <button data-m="matin" class="${adhkarMode === 'matin' ? 'active' : ''}">🌅 Matin</button>
+      <button data-m="soir" class="${adhkarMode === 'soir' ? 'active' : ''}">🌙 Soir</button>
+      <button data-m="priere" class="${adhkarMode === 'priere' ? 'active' : ''}">🕌 Prière</button>
+      <button data-m="sommeil" class="${adhkarMode === 'sommeil' ? 'active' : ''}">😴 Sommeil</button>
+    </div>
     <div class="hint">Touche un dhikr pour compter tes répétitions. Le PDF complet est dans Foi → Ressources.</div>
     <div id="adhList"></div>
     <a class="btn block gray" href="#/spirituel" style="margin-top:8px">← Foi</a></div>`));
