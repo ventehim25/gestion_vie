@@ -989,14 +989,33 @@ function renderProjets(v) {
           <div><b style="color:var(--red)">⚠️ Contre</b>${(p.cons || []).map(x => `<div class="s" style="font-size:.82rem">• ${escape(x)}</div>`).join('') || '<div class="s">—</div>'}</div>
         </div>
         ${p.notes ? `<div class="hint" style="margin-top:10px">${escape(p.notes)}</div>` : ''}
+        <div class="divider"></div>
+        <div class="row between"><b style="font-size:.85rem">🗒️ Suivi / nouveautés</b><button class="btn ghost sm" data-addinfo>➕ Noter une info</button></div>
+        <div class="infolist" style="margin-top:6px">${(p.log || []).slice().sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id)).map(l => `<div class="item"><span class="ic">📌</span><span class="grow"><div class="t" style="font-weight:400;white-space:normal">${escape(l.text)}</div><div class="s">${l.date}</div></span><button class="btn gray sm" data-delinfo="${l.id}">✕</button></div>`).join('') || '<small>Aucune info notée. Ajoute du nouveau dès que tu en apprends.</small>'}</div>
         <div class="row" style="gap:8px;margin-top:10px"><button class="btn gray sm" data-edit>✎ Modifier</button><button class="btn gray sm" data-del>🗑</button></div>
       </div>`);
       $('[data-edit]', card).onclick = () => projModal(p.id);
       $('[data-del]', card).onclick = () => { if (confirm('Supprimer ce projet ?')) { DB.projects = DB.projects.filter(x => x.id !== p.id); save(); router(); } };
+      $('[data-addinfo]', card).onclick = () => infoModal(p);
+      card.querySelectorAll('[data-delinfo]').forEach(b => b.onclick = () => { p.log = (p.log || []).filter(l => l.id !== b.dataset.delinfo); save(); router(); });
       pc.append(card);
     });
   });
   $('#addP', v).onclick = () => projModal();
+}
+function infoModal(p) {
+  const body = `
+    ${field('Quoi de neuf sur ce projet ?', '<textarea id="i_t" placeholder="ex: le propriétaire demande 350 000 / visite prévue samedi / besoin de travaux toiture" autofocus></textarea>')}
+    ${field('Date', `<input id="i_d" type="date" value="${todayISO()}">`)}
+    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Ajouter</button></div>`;
+  const bg = modal('Noter une info — ' + p.title, body);
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => {
+    const t = $('#i_t', bg).value.trim(); if (!t) return;
+    p.log = p.log || [];
+    p.log.push({ id: uid(), date: $('#i_d', bg).value || todayISO(), text: t });
+    save(); bg.remove(); router();
+  };
 }
 function projModal(id) {
   const cur = id ? DB.projects.find(p => p.id === id) : { title: '', type: 'Garage', location: '', cost: 0, surface: 0, payment: 'Comptant', deadline: '', income: 0, priority: DB.projects.length + 1, status: 'reflexion', pros: [], cons: [], notes: '' };
