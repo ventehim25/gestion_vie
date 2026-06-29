@@ -70,6 +70,7 @@ function seed() {
       ],
       notes: '',
       rent: { monthly: 0, arrears: 0, months: [] },
+      ledger: {},
     },
     farm: {
       opening: { perso: 0, partage: 0 },
@@ -123,6 +124,19 @@ function migrate(d) {
   out.mother = Object.assign({}, s.mother, d.mother || {});
   out.mother.rent = Object.assign({ monthly: 0, arrears: 0, months: [] }, out.mother.rent || {});
   if (!Array.isArray(out.mother.rent.months)) out.mother.rent.months = [];
+  // Migration unique vers le suivi mensuel (ledger) : on récupère les anciens revenus/charges
+  // récurrents Maman + les mouvements du carnet, regroupés par mois.
+  if (out.mother.ledger === undefined || out.mother.ledger === null) {
+    const cm = new Date().toISOString().slice(0, 7);
+    const L = {};
+    (out.incomes || []).filter(x => x.account === 'Maman').forEach(x => { (L[cm] = L[cm] || []).push({ id: uid(), type: 'revenu', label: x.label || 'Revenu', amount: +x.amount || 0 }); });
+    (out.fixed || []).filter(x => x.account === 'Maman').forEach(x => { (L[cm] = L[cm] || []).push({ id: uid(), type: 'charge', label: x.label || 'Charge', amount: +x.amount || 0 }); });
+    (out.transactions || []).filter(t => t.account === 'Maman').forEach(t => { const mo = (t.date || cm).slice(0, 7); (L[mo] = L[mo] || []).push({ id: uid(), type: t.type === 'revenu' ? 'revenu' : 'charge', label: (t.cat || '') + (t.note ? ' · ' + t.note : '') || 'Mouvement', amount: +t.amount || 0 }); });
+    out.mother.ledger = L;
+    out.incomes = (out.incomes || []).filter(x => x.account !== 'Maman');
+    out.fixed = (out.fixed || []).filter(x => x.account !== 'Maman');
+    out.transactions = (out.transactions || []).filter(t => t.account !== 'Maman');
+  }
   out.journal = Array.isArray(d.journal) ? d.journal : s.journal;
   out.health = { logs: (d.health && Array.isArray(d.health.logs)) ? d.health.logs : [] };
   out.spiritual = Object.assign({}, s.spiritual, d.spiritual || {});
@@ -1006,34 +1020,29 @@ function rentMonthModal(id) {
   $('#cancel', bg).onclick = () => bg.remove();
   $('#ok', bg).onclick = () => { const o = { month: $('#rm_m', bg).value || monthOf(todayISO()), expected: +$('#rm_e', bg).value || 0, received: +$('#rm_r', bg).value || 0, note: $('#rm_n', bg).value.trim() }; if (id) Object.assign(cur, o); else r.months.push(Object.assign({ id: uid() }, o)); save(); bg.remove(); router(); };
 }
+function shiftMonth(ym, delta) { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1 + delta, 1).toISOString().slice(0, 7); }
+function mamanLedgerNet() { let net = 0; const L = DB.mother.ledger || {}; Object.values(L).forEach(arr => arr.forEach(x => { net += x.type === 'revenu' ? (+x.amount || 0) : -(+x.amount || 0); })); return net; }
+let mamanMonth = monthOf(todayISO());
 function renderMaman(v) {
-  const m = monthOf(todayISO());
-  const all = DB.transactions.filter(t => t.account === 'Maman').sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
-  const ins = all.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
-  const outs = all.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
+  const L = DB.mother.ledger || {};
+  const items = (L[mamanMonth] || []);
+  const revs = items.filter(x => x.type === 'revenu');
+  const chgs = items.filter(x => x.type === 'charge');
+  const revSum = revs.reduce((a, x) => a + (+x.amount || 0), 0);
+  const chgSum = chgs.reduce((a, x) => a + (+x.amount || 0), 0);
   const opening = +DB.mother.opening || 0;
-  const mt = all.filter(t => monthOf(t.date) === m);
-  const mIn = mt.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
-  const mOut = mt.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
-  const mInc = DB.incomes.filter(t => t.account === 'Maman');
-  const mFix = DB.fixed.filter(t => t.account === 'Maman');
-  const mIncSum = mInc.reduce((a, f) => a + (+f.amount || 0), 0);
-  const mFixSum = mFix.reduce((a, f) => a + (+f.amount || 0), 0);
-  // Solde = départ + revenus récurrents − charges récurrentes + mouvements réels (carnet)
-  const solde = opening + mIncSum - mFixSum + ins - outs;
+  const solde = opening + mamanLedgerNet();
   const rentDue = rentImpaye();
+  const prevMonth = shiftMonth(mamanMonth, -1);
+  const hasPrev = (L[prevMonth] || []).length > 0;
 
   v.append(el(`<div><h1>👵 Maman</h1>
-    <div class="hint">Solde = <b>solde de départ</b> + <b>revenus</b> − <b>charges</b> + mouvements du carnet. Les revenus l'augmentent, les charges le diminuent.</div>
+    <div class="hint">Suis les <b>revenus et charges de chaque mois</b>. Navigue avec ‹ ›. Le solde cumule tous les mois.</div>
     <div class="card">
-      <div class="row between"><span style="color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.4px;font-weight:700">Solde de la caisse</span>
+      <div class="row between"><span style="color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.4px;font-weight:700">Solde de la caisse (cumulé)</span>
         <button class="btn gray sm" id="editOpen">Solde de départ</button></div>
       <div class="value ${solde >= 0 ? 'pos' : 'neg'}" style="font-size:1.9rem;font-weight:800;margin-top:4px">${fmtDH(solde)}</div>
-      <small>${fmtDH(opening)} départ + ${fmtDH(mIncSum)} revenus − ${fmtDH(mFixSum)} charges${ins ? ' + ' + fmtDH(ins) + ' entrées' : ''}${outs ? ' − ' + fmtDH(outs) + ' sorties' : ''}</small>
-    </div>
-    <div class="grid2">
-      <div class="stat"><div class="label">Entré ce mois</div><div class="value pos">${fmtDH(mIn)}</div></div>
-      <div class="stat"><div class="label">Sorti ce mois</div><div class="value neg">${fmtDH(mOut)}</div></div>
+      <small>${fmtDH(opening)} départ + tous les revenus − toutes les charges</small>
     </div>
 
     <a class="card tap" href="#/loyer" style="display:block;text-decoration:none;color:inherit;margin-top:12px">
@@ -1041,23 +1050,27 @@ function renderMaman(v) {
       <small>Suivi mois par mois (le locataire paie parfois moins) — touche pour gérer</small>
     </a>
 
-    <div class="section-title">Revenus & charges récurrents (par mois)</div>
-    <div class="card">
-      <div class="row between"><span><b>Revenus</b> (ex: loyer garage)</span><b class="amt pos">${fmtDH(mIncSum)}</b></div>
-      ${mInc.map(f => recurRow(f, 'incomes')).join('') || '<small>Aucun</small>'}
-      <div class="divider"></div>
-      <div class="row between"><span><b>Charges</b> (ex: médicaments)</span><b class="amt neg">${fmtDH(mFixSum)}</b></div>
-      ${mFix.map(f => recurRow(f, 'fixed')).join('') || '<small>Aucune</small>'}
-      <div class="row" style="gap:8px;margin-top:10px">
-        <button class="btn ghost sm" id="mAddInc">+ Revenu</button>
-        <button class="btn ghost sm" id="mAddFix">+ Charge</button>
+    <div class="card" style="margin-top:12px">
+      <div class="row between" style="align-items:center">
+        <button class="btn gray sm" id="mPrev">‹</button>
+        <b style="text-transform:capitalize">${moisLabel(mamanMonth)}</b>
+        <button class="btn gray sm" id="mNext">›</button>
       </div>
+      <div class="grid2" style="margin-top:8px">
+        <div class="stat"><div class="label">Revenus du mois</div><div class="value pos">${fmtDH(revSum)}</div></div>
+        <div class="stat"><div class="label">Charges du mois</div><div class="value neg">${fmtDH(chgSum)}</div></div>
+      </div>
+      <div class="row between" style="margin-top:8px;font-weight:700"><span>Net du mois</span><b style="color:${revSum - chgSum >= 0 ? 'var(--green)' : 'var(--red)'}">${fmtDH(revSum - chgSum)}</b></div>
     </div>
 
-    <div class="section-title">Carnet — rentrées & sorties</div>
-    <div class="card" id="ledger">
-      ${all.length ? all.map(txRow).join('') : '<div class="empty">Aucun mouvement. Touche ＋ en bas pour ajouter une rentrée ou une sortie.</div>'}
-    </div>
+    <div class="section-title">Revenus — <span style="text-transform:capitalize">${moisLabel(mamanMonth)}</span></div>
+    <div class="card" id="revList"></div>
+    <button class="btn block ghost sm" id="addRev" style="margin-top:6px">+ Revenu</button>
+
+    <div class="section-title">Charges — <span style="text-transform:capitalize">${moisLabel(mamanMonth)}</span></div>
+    <div class="card" id="chgList"></div>
+    <button class="btn block ghost sm" id="addChg" style="margin-top:6px">+ Charge</button>
+    ${hasPrev ? `<button class="btn block gray sm" id="copyPrev" style="margin-top:8px">📋 Copier les lignes de ${moisLabel(prevMonth)}</button>` : ''}
 
     <div class="section-title">💊 Médicaments (posologie)</div>
     <div class="card">
@@ -1077,18 +1090,19 @@ function renderMaman(v) {
       <textarea id="mNotes" placeholder="ex: garage loué, pharmacie habituelle, médecin…">${escape(DB.mother.notes)}</textarea>
       <button class="btn sm" id="saveNotes" style="margin-top:8px">Enregistrer</button>
     </div>
-    <button class="btn fab" id="fab">＋</button>
   </div>`));
 
-  $('#fab', v).onclick = () => mamanOpModal();
+  $('#mPrev', v).onclick = () => { mamanMonth = shiftMonth(mamanMonth, -1); router(); };
+  $('#mNext', v).onclick = () => { mamanMonth = shiftMonth(mamanMonth, 1); router(); };
   $('#editOpen', v).onclick = () => {
     const bg = modal('Solde de départ', `<p><small>Argent déjà présent dans la caisse de maman avant de commencer le suivi.</small></p>${field('Montant (DH)', `<input id="o_v" type="number" inputmode="decimal" value="${opening || ''}">`)}<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
     $('#ok', bg).onclick = () => { DB.mother.opening = +$('#o_v', bg).value || 0; save(); bg.remove(); router(); };
   };
-  v.querySelectorAll('[data-del-tx]').forEach(b => b.onclick = () => { DB.transactions = DB.transactions.filter(t => t.id !== b.dataset.delTx); save(); router(); });
-  $('#mAddInc', v).onclick = () => recurModal('incomes', null, ['Maman']);
-  $('#mAddFix', v).onclick = () => recurModal('fixed', null, ['Maman']);
-  v.querySelectorAll('[data-edit-recur]').forEach(b => b.onclick = () => recurModal(b.dataset.kind, b.dataset.editRecur, ['Maman']));
+  mamanLedgerList($('#revList', v), revs, 'revenu');
+  mamanLedgerList($('#chgList', v), chgs, 'charge');
+  $('#addRev', v).onclick = () => mamanItemModal('revenu');
+  $('#addChg', v).onclick = () => mamanItemModal('charge');
+  if (hasPrev) $('#copyPrev', v).onclick = () => { DB.mother.ledger[mamanMonth] = (DB.mother.ledger[mamanMonth] || []).concat((DB.mother.ledger[prevMonth] || []).map(x => ({ id: uid(), type: x.type, label: x.label, amount: x.amount }))); save(); router(); };
 
   // Médicaments
   const mc = $('#meds', v);
@@ -1121,27 +1135,28 @@ function renderMaman(v) {
   $('#addCnss', v).onclick = () => { const t = prompt('Nouvelle étape du dossier :'); if (t) { DB.mother.cnss.push({ id: uid(), label: t, done: false }); save(); router(); } };
   $('#saveNotes', v).onclick = () => { DB.mother.notes = $('#mNotes', v).value; save(); $('#saveNotes', v).textContent = 'Enregistré ✓'; };
 }
-function mamanOpModal() {
-  let type = 'depense';
-  const body = `
-    <div class="seg" id="segType"><button data-t="depense" class="active">－ Sortie</button><button data-t="revenu">＋ Rentrée</button></div>
-    ${field('Montant (DH)', '<input id="f_amt" type="number" inputmode="decimal" placeholder="0" autofocus>')}
-    ${field('Motif', `<select id="f_cat">${options(MAMAN_CATS.depense)}</select>`)}
-    ${field('Date', `<input id="f_date" type="date" value="${todayISO()}">`)}
-    ${field('Note (optionnel)', '<input id="f_note" placeholder="ex: pharmacie, garage…">')}
-    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`;
-  const bg = modal('Mouvement — caisse maman', body);
-  bg.querySelectorAll('#segType button').forEach(b => b.onclick = () => {
-    bg.querySelectorAll('#segType button').forEach(x => x.classList.remove('active'));
-    b.classList.add('active'); type = b.dataset.t; $('#f_cat', bg).innerHTML = options(MAMAN_CATS[type]);
+function mamanLedgerList(c, arr, type) {
+  if (!arr.length) { c.append(el(`<small>${type === 'revenu' ? 'Aucun revenu' : 'Aucune charge'} ce mois.</small>`)); return; }
+  arr.forEach(x => {
+    const row = el(`<div class="item"><span class="ic">${type === 'revenu' ? '💵' : '🧾'}</span><span class="grow"><div class="t">${escape(x.label)}</div></span><b class="amt ${type === 'revenu' ? 'pos' : 'neg'}">${fmtDH(x.amount)}</b><button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-e]', row).onclick = () => mamanItemModal(type, x.id);
+    $('[data-x]', row).onclick = () => { DB.mother.ledger[mamanMonth] = (DB.mother.ledger[mamanMonth] || []).filter(y => y.id !== x.id); save(); router(); };
+    c.append(row);
   });
-  $('#cancel', bg).onclick = () => bg.remove();
-  $('#ok', bg).onclick = () => {
-    const amount = +$('#f_amt', bg).value;
-    if (!amount) { $('#f_amt', bg).focus(); return; }
-    DB.transactions.push({ id: uid(), type, amount, account: 'Maman', cat: $('#f_cat', bg).value, date: $('#f_date', bg).value, note: $('#f_note', bg).value.trim() });
-    save(); bg.remove(); router();
-  };
+}
+function mamanItemModal(type, id) {
+  DB.mother.ledger[mamanMonth] = DB.mother.ledger[mamanMonth] || [];
+  const arr = DB.mother.ledger[mamanMonth];
+  const cur = id ? arr.find(x => x.id === id) : { label: '', amount: 0 };
+  const cats = type === 'revenu' ? MAMAN_CATS.revenu : MAMAN_CATS.depense;
+  const bg = modal((type === 'revenu' ? 'Revenu' : 'Charge') + ' — ' + moisLabel(mamanMonth), `
+    ${field('Libellé', `<input id="mi_l" value="${escape(cur.label)}" list="micats" placeholder="${type === 'revenu' ? 'ex: loyer garage' : 'ex: médicaments, médecin, pampers'}" autofocus>`)}
+    <datalist id="micats">${cats.map(c => `<option value="${c}">`).join('')}</datalist>
+    ${field('Montant (DH)', `<input id="mi_a" type="number" inputmode="decimal" value="${cur.amount || ''}">`)}
+    <div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">Enregistrer</button></div>`);
+  if ($('#cancel', bg)) $('#cancel', bg).onclick = () => bg.remove();
+  if (id) $('#del', bg).onclick = () => { DB.mother.ledger[mamanMonth] = arr.filter(x => x.id !== id); save(); bg.remove(); router(); };
+  $('#ok', bg).onclick = () => { const o = { type, label: $('#mi_l', bg).value.trim() || '(sans nom)', amount: +$('#mi_a', bg).value || 0 }; if (id) Object.assign(cur, o); else arr.push(Object.assign({ id: uid() }, o)); save(); bg.remove(); router(); };
 }
 
 /* ============================================================
@@ -1186,10 +1201,7 @@ function sheepStats() {
   return { heads, achats, ventes, benefice: ventes - achats };
 }
 function mamanSolde() {
-  const all = DB.transactions.filter(t => t.account === 'Maman');
-  const ins = all.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
-  const outs = all.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
-  return (+DB.mother.opening || 0) + ins - outs;
+  return (+DB.mother.opening || 0) + mamanLedgerNet();
 }
 function farmRow(t) {
   return `<div class="item"><span class="ic">${t.type === 'revenu' ? '＋' : '－'}</span>
