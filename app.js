@@ -88,6 +88,51 @@ function seed() {
       { id: uid(), title: 'Agriculture + élevage', type: 'Investissement', cost: 0, priority: 3, status: 'en_attente',
         pros: ['Terres déjà possédées', 'Potentiel élevage'], cons: ['Éloignement', 'Sécurité du terrain', 'Demande ma présence'], notes: '' },
     ],
+    garage: {
+      budget: 0,
+      notes: '',
+      quartiers: [
+        { id: uid(), name: 'Route de Martil', note: 'Gros passage quotidien, voitures qui roulent beaucoup', rating: 'Non évalué' },
+        { id: uid(), name: "Route de M'diq", note: 'Flux quotidien + pic touristique l’été', rating: 'Non évalué' },
+        { id: uid(), name: 'Mhannech I / II', note: 'Résidentiel dense, particuliers, classe moyenne', rating: 'Non évalué' },
+        { id: uid(), name: 'Route de Tanger', note: 'Entrée de ville, gros passage', rating: 'Non évalué' },
+        { id: uid(), name: 'Saniat Rmel / quartier industriel', note: 'Loyer plus bas, culture auto déjà présente', rating: 'Non évalué' },
+      ],
+      locaux: [],
+      materiel: [
+        { id: uid(), name: 'Pont élévateur ou cric + chandelles (occasion = moins cher)', cost: 0, bought: false, note: '' },
+        { id: uid(), name: 'Appareil de vidange / récupérateur d’huile', cost: 0, bought: false, note: '' },
+        { id: uid(), name: 'Compresseur + clé à choc', cost: 0, bought: false, note: '' },
+        { id: uid(), name: 'Jeu de clés / douilles / outillage à main', cost: 0, bought: false, note: '' },
+        { id: uid(), name: 'Démonte-pneu basique', cost: 0, bought: false, note: '' },
+        { id: uid(), name: 'Étagères + comptoir + vitrine', cost: 0, bought: false, note: '' },
+        { id: uid(), name: 'Enseigne / panneau visible de la route', cost: 0, bought: false, note: '' },
+      ],
+      fournisseurs: [
+        { id: uid(), name: 'Mon fournisseur filtres', produits: 'Filtres huile / air / gasoil', contact: '', note: 'Mon avantage prix — point de départ' },
+      ],
+      stock: [
+        { id: uid(), name: 'Filtres à huile', achat: 0, vente: 0, qty: 0, note: '' },
+        { id: uid(), name: 'Filtres à air', achat: 0, vente: 0, qty: 0, note: '' },
+        { id: uid(), name: 'Huile moteur', achat: 0, vente: 0, qty: 0, note: '' },
+        { id: uid(), name: 'Plaquettes de frein', achat: 0, vente: 0, qty: 0, note: '' },
+        { id: uid(), name: "Balais d'essuie-glace", achat: 0, vente: 0, qty: 0, note: '' },
+        { id: uid(), name: 'Ampoules', achat: 0, vente: 0, qty: 0, note: '' },
+        { id: uid(), name: 'Batteries', achat: 0, vente: 0, qty: 0, note: '' },
+      ],
+      etapes: [
+        { id: uid(), label: 'Tour des quartiers : compter le trafic, relever les loyers', done: false },
+        { id: uid(), label: 'Lister mes prix fournisseurs réels (5-6 pièces courantes)', done: false },
+        { id: uid(), label: 'Choisir et visiter le local (checklist terrain)', done: false },
+        { id: uid(), label: 'Signer le local + payer la caution', done: false },
+        { id: uid(), label: 'Aménager : enseigne, comptoir, étagères', done: false },
+        { id: uid(), label: 'Acheter l’outillage (privilégier l’occasion)', done: false },
+        { id: uid(), label: 'Constituer le stock de départ minimal', done: false },
+        { id: uid(), label: 'Recruter le mécanicien', done: false },
+        { id: uid(), label: 'Ouverture + Google Maps + WhatsApp Business', done: false },
+        { id: uid(), label: 'Lancer le carnet client (rappel vidange)', done: false },
+      ],
+    },
   };
 }
 
@@ -150,6 +195,17 @@ function migrate(d) {
     harvest: Array.isArray(df.harvest) ? df.harvest : s.farm.harvest,
     agenda: Array.isArray(df.agenda) ? df.agenda : s.farm.agenda,
     tx: Array.isArray(df.tx) ? df.tx : s.farm.tx,
+  };
+  const dg = d.garage || {};
+  out.garage = {
+    budget: +dg.budget || 0,
+    notes: typeof dg.notes === 'string' ? dg.notes : '',
+    quartiers: Array.isArray(dg.quartiers) ? dg.quartiers : s.garage.quartiers,
+    locaux: Array.isArray(dg.locaux) ? dg.locaux : s.garage.locaux,
+    materiel: Array.isArray(dg.materiel) ? dg.materiel : s.garage.materiel,
+    fournisseurs: Array.isArray(dg.fournisseurs) ? dg.fournisseurs : s.garage.fournisseurs,
+    stock: Array.isArray(dg.stock) ? dg.stock : s.garage.stock,
+    etapes: Array.isArray(dg.etapes) ? dg.etapes : s.garage.etapes,
   };
   return out;
 }
@@ -333,6 +389,7 @@ const routes = {
   'reglages': renderReglages, 'revue': renderRevue, 'voiture': renderVoiture, 'stats': renderStats, 'coffre': renderCoffre,
   'journal': renderJournal, 'sante': renderSante, 'adhkar': renderAdhkar,
   'rappels': renderRappels, 'prets': renderPrets, 'contacts': renderContacts, 'garanties': renderGaranties, 'loyer': renderLoyer,
+  'garage': renderGarage,
 };
 function currentRoute() { return (location.hash.replace(/^#\//, '') || '/'); }
 function applyTheme() { document.body.classList.toggle('dark', DB.theme === 'dark'); }
@@ -455,6 +512,7 @@ function renderHome(v) {
       <a class="btn ghost" href="#/stats">📈 Statistiques</a>
       <a class="btn ghost" href="#/revue">📊 Revue semaine</a>
       <a class="btn ghost" href="#/voiture">🚗 Voiture</a>
+      <a class="btn ghost" href="#/garage">🔧 Garage Tétouan</a>
       <a class="btn ghost" href="#/coffre">🗂️ Coffre infos</a>
       <a class="btn ghost" href="#/journal">📔 Journal</a>
       <a class="btn ghost" href="#/sante">❤️ Santé</a>
@@ -1609,6 +1667,7 @@ function renderProjets(v) {
   projects.forEach(p => { const c = p.type || 'Autre'; (groups[c] = groups[c] || []).push(p); });
   v.append(el(`<div><h1>🎯 Projets de vie</h1>
     <div class="hint">Tes options classées par catégorie. Remplis budget, lieu, métrage, paiement, délai… pour tout comparer et décider sereinement.</div>
+    <a class="btn block" href="#/garage" style="margin-bottom:10px">🔧 Projet Garage Tétouan (atelier détaillé : local, quartiers, matériel, stock)</a>
     <button class="btn block ghost" id="simBtn" style="margin-bottom:10px">🏦 Simulateur immobilier (louer / acheter / Mourabaha)</button>
     <div id="plist"></div>
     <button class="btn block ghost" id="addP">+ Nouveau projet</button>
@@ -1748,6 +1807,237 @@ function projModal(id) {
       notes: $('#p_n', bg).value.trim(),
     };
     if (id) Object.assign(cur, o); else DB.projects.push(Object.assign({ id: uid() }, o));
+    save(); bg.remove(); router();
+  };
+}
+
+/* ============================================================
+   GARAGE TÉTOUAN  (projet pièces auto + service rapide)
+   Espace de préparation : budget, quartiers, locaux, matériel,
+   fournisseurs, stock + marges, étapes. Tout est à remplir.
+   ============================================================ */
+function garageTotals() {
+  const g = DB.garage;
+  const mat = (g.materiel || []).reduce((a, m) => a + (+m.cost || 0), 0);
+  const stock = (g.stock || []).reduce((a, s) => a + (+s.achat || 0) * (+s.qty || 0), 0);
+  const budget = +g.budget || 0;
+  return { budget, mat, stock, reste: budget - mat - stock };
+}
+function renderGarage(v) {
+  const g = DB.garage;
+  const t = garageTotals();
+  const etapes = g.etapes || [];
+  const done = etapes.filter(e => e.done).length;
+  const rChip = (r) => (r && r !== 'Non évalué') ? `<span class="chip ${['Bon', 'Parfait'].includes(r) ? 'green' : r === 'Mauvais' ? 'red' : ''}">${escape(r)}</span>` : '';
+
+  v.append(el(`<div>
+    <h1>🔧 Garage Tétouan</h1>
+    <div class="hint">Ton espace pour préparer le garage (pièces + service rapide) à Tétouan. Remplis au fur et à mesure : quartiers, local, matériel, fournisseurs, stock. Les montants sont à toi.</div>
+
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">💰 Budget du projet</h3><button class="btn ghost sm" id="editBudget">modifier</button></div>
+      <div class="grid2" style="margin-top:8px">
+        <div class="stat"><div class="label">Budget total</div><div class="value teal">${fmtDH(t.budget)}</div></div>
+        <div class="stat"><div class="label">Reste à allouer</div><div class="value ${t.reste >= 0 ? 'pos' : 'neg'}">${fmtDH(t.reste)}</div></div>
+        <div class="stat"><div class="label">Matériel</div><div class="value neg">${fmtDH(t.mat)}</div></div>
+        <div class="stat"><div class="label">Stock de départ</div><div class="value neg">${fmtDH(t.stock)}</div></div>
+      </div>
+      ${t.reste < 0 ? '<small style="color:var(--red)">⚠️ Tu dépasses ton budget. Réduis le stock ou prends du matériel d’occasion.</small>' : '<small>Garde une marge pour la trésorerie des 2-3 premiers mois.</small>'}
+    </div>
+
+    <div class="card">
+      <div class="row between"><h3 style="margin:0">🚩 Étapes de lancement</h3><span class="chip ${etapes.length && done === etapes.length ? 'green' : ''}">${done}/${etapes.length}</span></div>
+      <div class="bar"><span style="width:${etapes.length ? done / etapes.length * 100 : 0}%"></span></div>
+      <div id="etapeList" style="margin-top:8px"></div>
+      <button class="btn ghost sm" id="addEtape" style="margin-top:8px">+ Étape</button>
+    </div>
+
+    <div class="section-title">📍 Quartiers à évaluer</div>
+    <div class="card">
+      <div id="quartierList"></div>
+      <button class="btn ghost sm" id="addQ" style="margin-top:8px">+ Quartier</button>
+    </div>
+
+    <div class="section-title">🏪 Locaux candidats</div>
+    <div class="card">
+      <div class="hint">Pour chaque local repéré : loyer, surface, visibilité, accès voiture, concurrence proche. Note-le pour comparer.</div>
+      <div id="localList"></div>
+      <button class="btn ghost sm" id="addL" style="margin-top:8px">+ Local</button>
+    </div>
+
+    <div class="section-title">🛠️ Matériel à trouver / acheter</div>
+    <div class="card">
+      <div id="matList"></div>
+      <button class="btn ghost sm" id="addM" style="margin-top:8px">+ Matériel</button>
+    </div>
+
+    <div class="section-title">📦 Fournisseurs</div>
+    <div class="card">
+      <div id="fournList"></div>
+      <button class="btn ghost sm" id="addF" style="margin-top:8px">+ Fournisseur</button>
+    </div>
+
+    <div class="section-title">🧴 Stock de départ & marges</div>
+    <div class="card">
+      <div class="hint">Renseigne prix d’achat, prix de vente et quantité. L’app calcule ta marge et l’investissement en stock.</div>
+      <div id="stockList"></div>
+      <button class="btn ghost sm" id="addS" style="margin-top:8px">+ Article</button>
+    </div>
+
+    <div class="section-title">🗒️ Notes & idées</div>
+    <div class="card">
+      <textarea id="gNotes" placeholder="Idées, contacts, prix relevés, remarques...">${escape(g.notes || '')}</textarea>
+      <button class="btn ghost sm" id="saveNotes" style="margin-top:8px">Enregistrer les notes</button>
+    </div>
+
+    <div class="section-title">💡 Mémo — l’étude en bref</div>
+    <div class="card">
+      <p style="font-size:.9rem;line-height:1.55;margin:0">
+      <b>Modèle :</b> consommables à rotation rapide (filtres, huile, plaquettes, balais, batteries) + service rapide léger. Démarrer petit, réinvestir les bénéfices.<br><br>
+      <b>Ton atout :</b> fournisseur pièces déjà en main → prix imbattable + pièce posée sur place (ce que les autres ne font pas proprement pour le particulier).<br><br>
+      <b>Différenciation :</b> propreté, prix affichés, facture, rappel vidange par WhatsApp. Ne pas se battre sur le prix de la pièce sèche face aux grossistes.<br><br>
+      <b>Seuil :</b> ~3 à 5 voitures/jour couvrent les charges fixes. Été = haute saison (MRE, plages de Martil/M’diq).
+      </p>
+    </div>
+    <a class="btn block ghost" href="#/projets" style="margin-top:10px">← Retour aux projets</a>
+  </div>`));
+
+  // Étapes
+  const elist = $('#etapeList', v);
+  if (!etapes.length) elist.append(el('<small>Aucune étape.</small>'));
+  etapes.forEach(e => {
+    const row = el(`<div class="item"><span class="check ${e.done ? 'on' : ''}">${e.done ? '✓' : ''}</span><span class="grow"><div class="t" style="white-space:normal;font-weight:400">${escape(e.label)}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
+    $('.check', row).onclick = () => { e.done = !e.done; save(); router(); };
+    $('[data-x]', row).onclick = () => { g.etapes = etapes.filter(x => x !== e); save(); router(); };
+    elist.append(row);
+  });
+  $('#addEtape', v).onclick = () => {
+    const bg = modal('Nouvelle étape', `${field('Étape', '<input id="e_l" autofocus>')}<div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Ajouter</button></div>`);
+    $('#cancel', bg).onclick = () => bg.remove();
+    $('#ok', bg).onclick = () => { const l = $('#e_l', bg).value.trim(); if (!l) return; (g.etapes = g.etapes || []).push({ id: uid(), label: l, done: false }); save(); bg.remove(); router(); };
+  };
+
+  // Quartiers
+  const qlist = $('#quartierList', v);
+  if (!(g.quartiers || []).length) qlist.append(el('<small>Aucun quartier. Ajoute ceux que tu veux comparer.</small>'));
+  (g.quartiers || []).forEach(q => {
+    const row = el(`<div class="item"><span class="ic">📍</span><span class="grow"><div class="t">${escape(q.name)}</div>${q.note ? `<div class="s" style="white-space:normal">${escape(q.note)}</div>` : ''}</span>${rChip(q.rating)}<button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-e]', row).onclick = () => garageItemModal('quartier', q);
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer ?')) { g.quartiers = g.quartiers.filter(x => x !== q); save(); router(); } };
+    qlist.append(row);
+  });
+  $('#addQ', v).onclick = () => garageItemModal('quartier');
+
+  // Locaux
+  const llist = $('#localList', v);
+  if (!(g.locaux || []).length) llist.append(el('<small>Aucun local. Ajoute ceux que tu repères pour les comparer.</small>'));
+  (g.locaux || []).forEach(l => {
+    const sub = [l.quartier, l.surface ? l.surface + ' m²' : '', l.loyer ? fmtDH(l.loyer) + '/mois' : '', l.visible && l.visible !== 'Non évalué' ? 'visi: ' + l.visible : '', l.acces && l.acces !== 'Non évalué' ? l.acces : '', l.concurrence].filter(Boolean).join(' · ');
+    const row = el(`<div class="item"><span class="ic">🏪</span><span class="grow"><div class="t">${escape(l.name || 'Local')}</div>${sub ? `<div class="s" style="white-space:normal">${escape(sub)}</div>` : ''}</span>${rChip(l.rating)}<button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-e]', row).onclick = () => garageItemModal('local', l);
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer ?')) { g.locaux = g.locaux.filter(x => x !== l); save(); router(); } };
+    llist.append(row);
+  });
+  $('#addL', v).onclick = () => garageItemModal('local');
+
+  // Matériel
+  const mlist = $('#matList', v);
+  if (!(g.materiel || []).length) mlist.append(el('<small>Aucun matériel listé.</small>'));
+  (g.materiel || []).forEach(m => {
+    const row = el(`<div class="item"><span class="check ${m.bought ? 'on' : ''}">${m.bought ? '✓' : ''}</span><span class="grow"><div class="t" style="white-space:normal">${escape(m.name)}</div>${m.note ? `<div class="s">${escape(m.note)}</div>` : ''}</span><b class="amt neg">${fmtDH(m.cost)}</b><button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
+    $('.check', row).onclick = () => { m.bought = !m.bought; save(); router(); };
+    $('[data-e]', row).onclick = () => garageItemModal('materiel', m);
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer ?')) { g.materiel = g.materiel.filter(x => x !== m); save(); router(); } };
+    mlist.append(row);
+  });
+  $('#addM', v).onclick = () => garageItemModal('materiel');
+
+  // Fournisseurs
+  const flist = $('#fournList', v);
+  if (!(g.fournisseurs || []).length) flist.append(el('<small>Aucun fournisseur.</small>'));
+  (g.fournisseurs || []).forEach(f => {
+    const sub = [f.produits, f.contact, f.note].filter(Boolean).join(' · ');
+    const row = el(`<div class="item"><span class="ic">📦</span><span class="grow"><div class="t">${escape(f.name)}</div>${sub ? `<div class="s" style="white-space:normal">${escape(sub)}</div>` : ''}</span><button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-e]', row).onclick = () => garageItemModal('fourn', f);
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer ?')) { g.fournisseurs = g.fournisseurs.filter(x => x !== f); save(); router(); } };
+    flist.append(row);
+  });
+  $('#addF', v).onclick = () => garageItemModal('fourn');
+
+  // Stock
+  const slist = $('#stockList', v);
+  if (!(g.stock || []).length) slist.append(el('<small>Aucun article.</small>'));
+  (g.stock || []).forEach(s => {
+    const marge = (+s.vente || 0) - (+s.achat || 0);
+    const margePct = (+s.achat > 0) ? (marge / s.achat * 100) : 0;
+    const lineCost = (+s.achat || 0) * (+s.qty || 0);
+    const sub = `achat ${fmtDH(s.achat)} · vente ${fmtDH(s.vente)}${s.qty ? ` · ×${s.qty}` : ''}${(+s.achat > 0) ? ` · marge ${margePct.toFixed(0)}%` : ''}`;
+    const row = el(`<div class="item"><span class="ic">🧴</span><span class="grow"><div class="t">${escape(s.name)}</div><div class="s" style="white-space:normal">${sub}${s.note ? ' · ' + escape(s.note) : ''}</div></span><b class="amt">${fmtDH(lineCost)}</b><button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-e]', row).onclick = () => garageItemModal('stock', s);
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer ?')) { g.stock = g.stock.filter(x => x !== s); save(); router(); } };
+    slist.append(row);
+  });
+  $('#addS', v).onclick = () => garageItemModal('stock');
+
+  // Notes & budget
+  $('#saveNotes', v).onclick = () => { g.notes = $('#gNotes', v).value; save(); const b = $('#saveNotes', v); b.textContent = 'Enregistré ✓'; setTimeout(() => { b.textContent = 'Enregistrer les notes'; }, 1500); };
+  $('#editBudget', v).onclick = () => {
+    const bg = modal('Budget du projet', `${field('Budget total (DH)', `<input id="gb" type="number" inputmode="decimal" value="${+g.budget || ''}" autofocus>`)}<div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
+    $('#cancel', bg).onclick = () => bg.remove();
+    $('#ok', bg).onclick = () => { g.budget = +$('#gb', bg).value || 0; save(); bg.remove(); router(); };
+  };
+}
+function garageItemModal(kind, item) {
+  const g = DB.garage;
+  const c = item || {};
+  const R = ['Non évalué', 'Mauvais', 'Moyen', 'Bon', 'Parfait'];
+  let title = '', body = '';
+  if (kind === 'quartier') {
+    title = item ? 'Modifier le quartier' : 'Ajouter un quartier';
+    body = field('Quartier', `<input id="f_name" value="${escape(c.name || '')}" placeholder="ex: Route de Martil" autofocus>`)
+      + field('Note (flux, concurrence, loyer…)', `<textarea id="f_note">${escape(c.note || '')}</textarea>`)
+      + field('Évaluation', `<select id="f_rating">${options(R, c.rating || 'Non évalué')}</select>`);
+  } else if (kind === 'local') {
+    title = item ? 'Modifier le local' : 'Ajouter un local';
+    body = field('Nom / repère', `<input id="f_name" value="${escape(c.name || '')}" placeholder="ex: Local av. Martil" autofocus>`)
+      + `<div class="grid2">${field('Quartier', `<input id="f_quartier" value="${escape(c.quartier || '')}">`)}${field('Surface (m²)', `<input id="f_surface" type="number" inputmode="decimal" value="${c.surface || ''}">`)}</div>`
+      + `<div class="grid2">${field('Loyer (DH/mois)', `<input id="f_loyer" type="number" inputmode="decimal" value="${c.loyer || ''}">`)}${field('Caution (DH)', `<input id="f_caution" type="number" inputmode="decimal" value="${c.caution || ''}">`)}</div>`
+      + `<div class="grid2">${field('Visibilité', `<select id="f_visible">${options(['Non évalué', 'Faible', 'Moyenne', 'Bonne'], c.visible || 'Non évalué')}</select>`)}${field('Accès voiture', `<select id="f_acces">${options(['Non évalué', 'Voiture entre', 'Stationne devant', 'Difficile'], c.acces || 'Non évalué')}</select>`)}</div>`
+      + field('Concurrence proche', `<input id="f_concurrence" value="${escape(c.concurrence || '')}" placeholder="ex: 2 mécanos à 200 m">`)
+      + field('Évaluation globale', `<select id="f_rating">${options(R, c.rating || 'Non évalué')}</select>`)
+      + field('Note', `<textarea id="f_note">${escape(c.note || '')}</textarea>`);
+  } else if (kind === 'materiel') {
+    title = item ? 'Modifier le matériel' : 'Ajouter du matériel';
+    body = field('Matériel', `<input id="f_name" value="${escape(c.name || '')}" placeholder="ex: Pont élévateur (occasion)" autofocus>`)
+      + field('Coût (DH)', `<input id="f_cost" type="number" inputmode="decimal" value="${c.cost || ''}">`)
+      + `<label class="field" style="display:flex;align-items:center;gap:10px"><input type="checkbox" id="f_bought" ${c.bought ? 'checked' : ''} style="width:auto;margin:0"> Déjà acheté</label>`
+      + field('Note', `<input id="f_note" value="${escape(c.note || '')}">`);
+  } else if (kind === 'fourn') {
+    title = item ? 'Modifier le fournisseur' : 'Ajouter un fournisseur';
+    body = field('Nom', `<input id="f_name" value="${escape(c.name || '')}" autofocus>`)
+      + field('Produits', `<input id="f_produits" value="${escape(c.produits || '')}" placeholder="ex: huile, plaquettes">`)
+      + field('Contact', `<input id="f_contact" value="${escape(c.contact || '')}" placeholder="tél / ville">`)
+      + field('Note', `<input id="f_note" value="${escape(c.note || '')}">`);
+  } else if (kind === 'stock') {
+    title = item ? "Modifier l'article" : 'Ajouter un article';
+    body = field('Article', `<input id="f_name" value="${escape(c.name || '')}" placeholder="ex: Plaquettes de frein" autofocus>`)
+      + `<div class="grid2">${field('Prix achat (DH)', `<input id="f_achat" type="number" inputmode="decimal" value="${c.achat || ''}">`)}${field('Prix vente (DH)', `<input id="f_vente" type="number" inputmode="decimal" value="${c.vente || ''}">`)}</div>`
+      + field('Quantité de départ', `<input id="f_qty" type="number" inputmode="numeric" value="${c.qty || ''}">`)
+      + field('Note', `<input id="f_note" value="${escape(c.note || '')}">`);
+  }
+  body += `<div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">${item ? 'Enregistrer' : 'Ajouter'}</button></div>`;
+  const bg = modal(title, body);
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => {
+    const name = $('#f_name', bg).value.trim();
+    if (!name) return;
+    let o, arr;
+    if (kind === 'quartier') { o = { name, note: $('#f_note', bg).value.trim(), rating: $('#f_rating', bg).value }; arr = (g.quartiers = g.quartiers || []); }
+    else if (kind === 'local') { o = { name, quartier: $('#f_quartier', bg).value.trim(), surface: +$('#f_surface', bg).value || 0, loyer: +$('#f_loyer', bg).value || 0, caution: +$('#f_caution', bg).value || 0, visible: $('#f_visible', bg).value, acces: $('#f_acces', bg).value, concurrence: $('#f_concurrence', bg).value.trim(), rating: $('#f_rating', bg).value, note: $('#f_note', bg).value.trim() }; arr = (g.locaux = g.locaux || []); }
+    else if (kind === 'materiel') { o = { name, cost: +$('#f_cost', bg).value || 0, bought: $('#f_bought', bg).checked, note: $('#f_note', bg).value.trim() }; arr = (g.materiel = g.materiel || []); }
+    else if (kind === 'fourn') { o = { name, produits: $('#f_produits', bg).value.trim(), contact: $('#f_contact', bg).value.trim(), note: $('#f_note', bg).value.trim() }; arr = (g.fournisseurs = g.fournisseurs || []); }
+    else if (kind === 'stock') { o = { name, achat: +$('#f_achat', bg).value || 0, vente: +$('#f_vente', bg).value || 0, qty: +$('#f_qty', bg).value || 0, note: $('#f_note', bg).value.trim() }; arr = (g.stock = g.stock || []); }
+    if (item) Object.assign(item, o); else arr.push(Object.assign({ id: uid() }, o));
     save(); bg.remove(); router();
   };
 }
