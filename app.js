@@ -1705,8 +1705,9 @@ function renderReglages(v) {
     <div class="card">
       <h3>☁️ Sauvegarde GitHub (privée, multi-appareils)</h3>
       ${SYNC.enabled ? `
-        <p><small>✅ <b>Connecté.</b> Tes données sont sauvegardées automatiquement dans un Gist privé et synchronisées entre tes appareils.</small></p>
+        <p><small>✅ <b>Connecté.</b> Synchro automatique : tes infos se sauvegardent et se retrouvent sur tes autres appareils dès que tu ouvres l'app.</small></p>
         <p><small>Dernière sauvegarde : ${SYNC.lastSync ? new Date(SYNC.lastSync).toLocaleString('fr-FR') : '—'}</small></p>
+        <p><small>ID du Gist (doit être <b>identique</b> sur tous tes appareils) :<br><code style="word-break:break-all">${escape(SYNC.gistId || '')}</code></small></p>
         <div class="row" style="gap:8px"><button class="btn" id="ghSave">⬆ Sauvegarder</button><button class="btn ghost" id="ghRestore">⬇ Restaurer</button></div>
         <button class="btn gray sm" id="ghDisc" style="margin-top:8px">Déconnecter cet appareil</button>
       ` : `
@@ -2267,3 +2268,14 @@ router();
 scheduleReminder();
 scheduleMedReminder();
 syncOnLoad();
+
+// Synchro automatique multi-appareils :
+// - quand on revient sur l'app (ou qu'on la rouvre) → on récupère la dernière version
+// - quand on quitte l'app → on pousse tout de suite les changements en attente
+// - quand le réseau revient → on récupère
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (SYNC.enabled) { clearTimeout(pushTimer); ghPush().catch(() => {}); } }
+  else { syncOnLoad(); }
+});
+window.addEventListener('online', () => syncOnLoad());
+window.addEventListener('pagehide', () => { if (SYNC.enabled) { clearTimeout(pushTimer); ghPush().catch(() => {}); } });
