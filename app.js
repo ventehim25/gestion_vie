@@ -104,6 +104,16 @@ function seed() {
       fournisseurs: [
         { id: uid(), name: 'Mon fournisseur filtres', produits: 'Filtres huile / air / gasoil', contact: '', note: 'Mon avantage prix — point de départ' },
       ],
+      concurrents: [
+        { id: uid(), name: 'Mandri Pneus', type: 'Service / centre', location: 'Tétouan (centre complet)', prix: '', rating: 'Non évalué', note: 'Concurrent n°1 : +30 ans, pneus + vidange + freins + diagnostic. À visiter pour relever les prix.' },
+        { id: uid(), name: 'Manumaroc', type: 'Pièces', location: '1 rue Allal Ben Abdallah', prix: '', rating: 'Non évalué', note: 'Gros acteur pièces auto + industrielles.' },
+        { id: uid(), name: 'Auto Pièces Nourddine Chairi (A.P.N.C.)', type: 'Pièces', location: '417 av. des FAR, imm. El Fath', prix: '', rating: 'Non évalué', note: '' },
+        { id: uid(), name: 'Loukach Distribution (LODIPA)', type: 'Pièces', location: '47 bd. Mohammed V', prix: '', rating: 'Non évalué', note: 'Distributeur, position centrale.' },
+        { id: uid(), name: 'Auto Rechange Kouilma', type: 'Pièces', location: 'bd Sidi Abdellah, Fakhar Kouilma', prix: '', rating: 'Non évalué', note: '' },
+        { id: uid(), name: 'Auto Enainai', type: 'Pièces', location: '147 rue El Mohamadia', prix: '', rating: 'Non évalué', note: '' },
+        { id: uid(), name: 'Pièces Auto Professionnel', type: 'Pièces', location: '204 av. Dakhla', prix: '', rating: 'Non évalué', note: '' },
+        { id: uid(), name: 'Pièces Autos ElMehdi', type: 'Pièces', location: 'Tétouan (☎ 0539 99 46 58)', prix: '', rating: 'Non évalué', note: '' },
+      ],
       stock: [
         { id: uid(), name: 'Filtres à huile', achat: 0, vente: 0, qty: 0, note: '' },
         { id: uid(), name: 'Filtres à air', achat: 0, vente: 0, qty: 0, note: '' },
@@ -197,6 +207,7 @@ function migrate(d) {
     locaux: Array.isArray(dg.locaux) ? dg.locaux : s.garage.locaux,
     materiel: Array.isArray(dg.materiel) ? dg.materiel : s.garage.materiel,
     fournisseurs: Array.isArray(dg.fournisseurs) ? dg.fournisseurs : s.garage.fournisseurs,
+    concurrents: Array.isArray(dg.concurrents) ? dg.concurrents : s.garage.concurrents,
     stock: Array.isArray(dg.stock) ? dg.stock : s.garage.stock,
     etapes: Array.isArray(dg.etapes) ? dg.etapes : s.garage.etapes,
   };
@@ -1858,6 +1869,13 @@ function renderGarage(v) {
       <button class="btn ghost sm" id="addL" style="margin-top:8px">+ Local</button>
     </div>
 
+    <div class="section-title">🏁 Concurrents</div>
+    <div class="card">
+      <div class="hint">Concurrents repérés à Tétouan (annuaires, à vérifier sur place). Visite-les en client et note leurs prix pour bâtir ta grille.</div>
+      <div id="concList"></div>
+      <button class="btn ghost sm" id="addC" style="margin-top:8px">+ Concurrent</button>
+    </div>
+
     <div class="section-title">🛠️ Matériel à trouver / acheter</div>
     <div class="card">
       <div id="matList"></div>
@@ -1933,6 +1951,18 @@ function renderGarage(v) {
   });
   $('#addL', v).onclick = () => garageItemModal('local');
 
+  // Concurrents
+  const clist = $('#concList', v);
+  if (!(g.concurrents || []).length) clist.append(el('<small>Aucun concurrent listé.</small>'));
+  (g.concurrents || []).forEach(c => {
+    const sub = [c.type, c.location, c.prix ? '💵 ' + c.prix : '', c.note].filter(Boolean).join(' · ');
+    const row = el(`<div class="item"><span class="ic">🏁</span><span class="grow"><div class="t">${escape(c.name)}</div>${sub ? `<div class="s" style="white-space:normal">${escape(sub)}</div>` : ''}</span>${rChip(c.rating)}<button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-e]', row).onclick = () => garageItemModal('concurrent', c);
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer ?')) { g.concurrents = g.concurrents.filter(x => x !== c); save(); router(); } };
+    clist.append(row);
+  });
+  $('#addC', v).onclick = () => garageItemModal('concurrent');
+
   // Matériel
   const mlist = $('#matList', v);
   if (!(g.materiel || []).length) mlist.append(el('<small>Aucun matériel listé.</small>'));
@@ -2005,6 +2035,13 @@ function garageItemModal(kind, item) {
       + field('Coût (DH)', `<input id="f_cost" type="number" inputmode="decimal" value="${c.cost || ''}">`)
       + `<label class="field" style="display:flex;align-items:center;gap:10px"><input type="checkbox" id="f_bought" ${c.bought ? 'checked' : ''} style="width:auto;margin:0"> Déjà acheté</label>`
       + field('Note', `<input id="f_note" value="${escape(c.note || '')}">`);
+  } else if (kind === 'concurrent') {
+    title = item ? 'Modifier le concurrent' : 'Ajouter un concurrent';
+    body = field('Nom', `<input id="f_name" value="${escape(c.name || '')}" placeholder="ex: Mandri Pneus" autofocus>`)
+      + `<div class="grid2">${field('Type', `<select id="f_type">${options(['Pièces', 'Service / centre', 'Mécano de quartier', 'Chaîne nationale', 'Autre'], c.type || 'Pièces')}</select>`)}${field('Évaluation', `<select id="f_rating">${options(R, c.rating || 'Non évalué')}</select>`)}</div>`
+      + field('Localisation', `<input id="f_location" value="${escape(c.location || '')}" placeholder="ex: 47 bd Mohammed V">`)
+      + field('Prix relevés', `<input id="f_prix" value="${escape(c.prix || '')}" placeholder="ex: vidange 120 DH, plaquettes 250 DH">`)
+      + field('Note (forces / faiblesses)', `<textarea id="f_note">${escape(c.note || '')}</textarea>`);
   } else if (kind === 'fourn') {
     title = item ? 'Modifier le fournisseur' : 'Ajouter un fournisseur';
     body = field('Nom', `<input id="f_name" value="${escape(c.name || '')}" autofocus>`)
@@ -2028,6 +2065,7 @@ function garageItemModal(kind, item) {
     if (kind === 'quartier') { o = { name, note: $('#f_note', bg).value.trim(), rating: $('#f_rating', bg).value }; arr = (g.quartiers = g.quartiers || []); }
     else if (kind === 'local') { o = { name, quartier: $('#f_quartier', bg).value.trim(), surface: +$('#f_surface', bg).value || 0, loyer: +$('#f_loyer', bg).value || 0, caution: +$('#f_caution', bg).value || 0, visible: $('#f_visible', bg).value, acces: $('#f_acces', bg).value, concurrence: $('#f_concurrence', bg).value.trim(), rating: $('#f_rating', bg).value, note: $('#f_note', bg).value.trim() }; arr = (g.locaux = g.locaux || []); }
     else if (kind === 'materiel') { o = { name, cost: +$('#f_cost', bg).value || 0, bought: $('#f_bought', bg).checked, note: $('#f_note', bg).value.trim() }; arr = (g.materiel = g.materiel || []); }
+    else if (kind === 'concurrent') { o = { name, type: $('#f_type', bg).value, location: $('#f_location', bg).value.trim(), prix: $('#f_prix', bg).value.trim(), rating: $('#f_rating', bg).value, note: $('#f_note', bg).value.trim() }; arr = (g.concurrents = g.concurrents || []); }
     else if (kind === 'fourn') { o = { name, produits: $('#f_produits', bg).value.trim(), contact: $('#f_contact', bg).value.trim(), note: $('#f_note', bg).value.trim() }; arr = (g.fournisseurs = g.fournisseurs || []); }
     else if (kind === 'stock') { o = { name, achat: +$('#f_achat', bg).value || 0, vente: +$('#f_vente', bg).value || 0, qty: +$('#f_qty', bg).value || 0, note: $('#f_note', bg).value.trim() }; arr = (g.stock = g.stock || []); }
     if (item) Object.assign(item, o); else arr.push(Object.assign({ id: uid() }, o));
