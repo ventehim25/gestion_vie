@@ -69,6 +69,7 @@ function seed() {
         { id: uid(), label: 'Déposer le dossier à la CNSS', done: false },
       ],
       notes: '',
+      rent: { monthly: 0, arrears: 0, months: [] },
     },
     farm: {
       opening: { perso: 0, partage: 0 },
@@ -120,6 +121,8 @@ function migrate(d) {
   out.prayer = Object.assign({}, s.prayer, d.prayer || {});
   out.prayer.adjust = Object.assign({}, s.prayer.adjust, (d.prayer && d.prayer.adjust) || {});
   out.mother = Object.assign({}, s.mother, d.mother || {});
+  out.mother.rent = Object.assign({ monthly: 0, arrears: 0, months: [] }, out.mother.rent || {});
+  if (!Array.isArray(out.mother.rent.months)) out.mother.rent.months = [];
   out.journal = Array.isArray(d.journal) ? d.journal : s.journal;
   out.health = { logs: (d.health && Array.isArray(d.health.logs)) ? d.health.logs : [] };
   out.spiritual = Object.assign({}, s.spiritual, d.spiritual || {});
@@ -315,7 +318,7 @@ const routes = {
   'repas': renderRepas, 'famille': renderFamille, 'maman': renderMaman, 'ferme': renderFerme, 'spirituel': renderSpirituel, 'projets': renderProjets,
   'reglages': renderReglages, 'revue': renderRevue, 'voiture': renderVoiture, 'stats': renderStats, 'coffre': renderCoffre,
   'journal': renderJournal, 'sante': renderSante, 'adhkar': renderAdhkar,
-  'rappels': renderRappels, 'prets': renderPrets, 'contacts': renderContacts, 'garanties': renderGaranties,
+  'rappels': renderRappels, 'prets': renderPrets, 'contacts': renderContacts, 'garanties': renderGaranties, 'loyer': renderLoyer,
 };
 function currentRoute() { return (location.hash.replace(/^#\//, '') || '/'); }
 function applyTheme() { document.body.classList.toggle('dark', DB.theme === 'dark'); }
@@ -950,6 +953,59 @@ function renderFamille(v) {
    MAMAN  (carnet de caisse : rentrées / sorties + médic. + CNSS)
    ============================================================ */
 const MAMAN_CATS = { revenu: ['Loyer garage', 'Aide', 'Autre'], depense: ['Médicaments', 'Santé', 'Dons', 'Autre'] };
+function rentImpaye() {
+  const r = DB.mother.rent || { arrears: 0, months: [] };
+  const sum = (r.months || []).reduce((a, x) => a + ((+x.expected || 0) - (+x.received || 0)), 0);
+  return (+r.arrears || 0) + sum;
+}
+function moisLabel(m) { try { return new Date(m + '-01T00:00').toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }); } catch (e) { return m; } }
+function renderLoyer(v) {
+  const r = DB.mother.rent;
+  const months = (r.months || []).slice().sort((a, b) => b.month.localeCompare(a.month));
+  const due = rentImpaye();
+  const totalRecu = (r.months || []).reduce((a, x) => a + (+x.received || 0), 0);
+  v.append(el(`<div><h1>🏠 Loyer garage</h1>
+    <div class="hint">Le locataire paie parfois moins. Note chaque mois ce qu'il a donné : tu vois tout de suite les mois <b>impayés</b> et le <b>total qu'il te doit</b>.</div>
+    <div class="card">
+      <span style="color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.4px;font-weight:700">Total impayé (ce qu'il te doit)</span>
+      <div class="value ${due > 0 ? 'neg' : 'pos'}" style="font-size:1.9rem;font-weight:800;margin-top:4px">${fmtDH(due)}</div>
+      <small>Arriéré de départ ${fmtDH(r.arrears || 0)} + (loyers dus − reçus). Total reçu suivi : ${fmtDH(totalRecu)}</small>
+    </div>
+    <div class="grid2">
+      <div class="stat" id="setMonthly" style="cursor:pointer"><div class="label">Loyer / mois ✎</div><div class="value teal">${fmtDH(r.monthly || 0)}</div></div>
+      <div class="stat" id="setArrears" style="cursor:pointer"><div class="label">Arriéré de départ ✎</div><div class="value neg">${fmtDH(r.arrears || 0)}</div></div>
+    </div>
+    <div class="section-title">Mois par mois</div>
+    <div class="card" id="rentList"></div>
+    <button class="btn block ghost" id="addMonth">+ Ajouter un mois / paiement</button>
+    <a class="btn block gray" href="#/maman" style="margin-top:8px">← Maman</a></div>`));
+  $('#setMonthly', v).onclick = () => { const bg = modal('Loyer mensuel attendu', field('Montant (DH)', `<input id="rm" type="number" inputmode="decimal" value="${r.monthly || ''}">`) + '<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>'); $('#ok', bg).onclick = () => { r.monthly = +$('#rm', bg).value || 0; save(); bg.remove(); router(); }; };
+  $('#setArrears', v).onclick = () => { const bg = modal('Arriéré de départ', '<p><small>Ce qu\'il te devait déjà avant de commencer le suivi (ex : 5000).</small></p>' + field('Montant (DH)', `<input id="ra" type="number" inputmode="decimal" value="${r.arrears || ''}">`) + '<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>'); $('#ok', bg).onclick = () => { r.arrears = +$('#ra', bg).value || 0; save(); bg.remove(); router(); }; };
+  const rl = $('#rentList', v);
+  if (!months.length) rl.append(el('<small>Aucun mois noté. Touche « + Ajouter un mois ».</small>'));
+  months.forEach(x => {
+    const reste = (+x.expected || 0) - (+x.received || 0);
+    const cls = reste <= 0 ? 'green' : (+x.received > 0 ? '' : 'red');
+    const lab = reste <= 0 ? 'payé ✓' : (+x.received > 0 ? 'reste ' + fmtDH(reste) : 'impayé');
+    const row = el(`<div class="item"><span class="ic">📅</span><span class="grow"><div class="t" style="text-transform:capitalize">${moisLabel(x.month)}${x.note ? ' · ' + escape(x.note) : ''}</div><div class="s">reçu ${fmtDH(x.received || 0)} / attendu ${fmtDH(x.expected || 0)}</div></span><span class="chip ${cls}">${lab}</span><button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-e]', row).onclick = () => rentMonthModal(x.id);
+    $('[data-x]', row).onclick = () => { r.months = r.months.filter(y => y.id !== x.id); save(); router(); };
+    rl.append(row);
+  });
+  $('#addMonth', v).onclick = () => rentMonthModal();
+}
+function rentMonthModal(id) {
+  const r = DB.mother.rent;
+  const cur = id ? r.months.find(x => x.id === id) : { month: monthOf(todayISO()), expected: r.monthly || 0, received: 0, note: '' };
+  const bg = modal(id ? 'Modifier le mois' : 'Mois de loyer', `
+    ${field('Mois', `<input id="rm_m" type="month" value="${cur.month}">`)}
+    ${field('Loyer attendu (DH)', `<input id="rm_e" type="number" inputmode="decimal" value="${cur.expected || ''}">`)}
+    ${field('Montant reçu (DH)', `<input id="rm_r" type="number" inputmode="decimal" value="${cur.received || ''}">`)}
+    ${field('Note', `<input id="rm_n" value="${escape(cur.note || '')}" placeholder="ex: a promis le reste">`)}
+    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => { const o = { month: $('#rm_m', bg).value || monthOf(todayISO()), expected: +$('#rm_e', bg).value || 0, received: +$('#rm_r', bg).value || 0, note: $('#rm_n', bg).value.trim() }; if (id) Object.assign(cur, o); else r.months.push(Object.assign({ id: uid() }, o)); save(); bg.remove(); router(); };
+}
 function renderMaman(v) {
   const m = monthOf(todayISO());
   const all = DB.transactions.filter(t => t.account === 'Maman').sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id));
@@ -965,6 +1021,7 @@ function renderMaman(v) {
   const mFixSum = mFix.reduce((a, f) => a + (+f.amount || 0), 0);
   // Solde = départ + revenus récurrents − charges récurrentes + mouvements réels (carnet)
   const solde = opening + mIncSum - mFixSum + ins - outs;
+  const rentDue = rentImpaye();
 
   v.append(el(`<div><h1>👵 Maman</h1>
     <div class="hint">Solde = <b>solde de départ</b> + <b>revenus</b> − <b>charges</b> + mouvements du carnet. Les revenus l'augmentent, les charges le diminuent.</div>
@@ -978,6 +1035,11 @@ function renderMaman(v) {
       <div class="stat"><div class="label">Entré ce mois</div><div class="value pos">${fmtDH(mIn)}</div></div>
       <div class="stat"><div class="label">Sorti ce mois</div><div class="value neg">${fmtDH(mOut)}</div></div>
     </div>
+
+    <a class="card tap" href="#/loyer" style="display:block;text-decoration:none;color:inherit;margin-top:12px">
+      <div class="row between"><h3 style="margin:0">🏠 Loyer garage</h3><span class="chip ${rentDue > 0 ? 'red' : 'green'}">Impayé : ${fmtDH(rentDue)}</span></div>
+      <small>Suivi mois par mois (le locataire paie parfois moins) — touche pour gérer</small>
+    </a>
 
     <div class="section-title">Revenus & charges récurrents (par mois)</div>
     <div class="card">
