@@ -956,7 +956,6 @@ function renderMaman(v) {
   const ins = all.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
   const outs = all.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
   const opening = +DB.mother.opening || 0;
-  const solde = opening + ins - outs;
   const mt = all.filter(t => monthOf(t.date) === m);
   const mIn = mt.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
   const mOut = mt.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
@@ -964,13 +963,16 @@ function renderMaman(v) {
   const mFix = DB.fixed.filter(t => t.account === 'Maman');
   const mIncSum = mInc.reduce((a, f) => a + (+f.amount || 0), 0);
   const mFixSum = mFix.reduce((a, f) => a + (+f.amount || 0), 0);
+  // Solde = départ + revenus récurrents − charges récurrentes + mouvements réels (carnet)
+  const solde = opening + mIncSum - mFixSum + ins - outs;
 
   v.append(el(`<div><h1>👵 Maman</h1>
-    <div class="hint">Le carnet de la caisse de maman : chaque montant qui <b>rentre</b> (loyer garage…) et qui <b>sort</b> (médicaments, dons…). Le solde reste toujours visible.</div>
+    <div class="hint">Solde = <b>solde de départ</b> + <b>revenus</b> − <b>charges</b> + mouvements du carnet. Les revenus l'augmentent, les charges le diminuent.</div>
     <div class="card">
       <div class="row between"><span style="color:var(--muted);font-size:.72rem;text-transform:uppercase;letter-spacing:.4px;font-weight:700">Solde de la caisse</span>
         <button class="btn gray sm" id="editOpen">Solde de départ</button></div>
       <div class="value ${solde >= 0 ? 'pos' : 'neg'}" style="font-size:1.9rem;font-weight:800;margin-top:4px">${fmtDH(solde)}</div>
+      <small>${fmtDH(opening)} départ + ${fmtDH(mIncSum)} revenus − ${fmtDH(mFixSum)} charges${ins ? ' + ' + fmtDH(ins) + ' entrées' : ''}${outs ? ' − ' + fmtDH(outs) + ' sorties' : ''}</small>
     </div>
     <div class="grid2">
       <div class="stat"><div class="label">Entré ce mois</div><div class="value pos">${fmtDH(mIn)}</div></div>
