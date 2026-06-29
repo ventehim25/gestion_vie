@@ -1956,7 +1956,8 @@ function renderGarage(v) {
   if (!(g.concurrents || []).length) clist.append(el('<small>Aucun concurrent listé.</small>'));
   (g.concurrents || []).forEach(c => {
     const sub = [c.type, c.location, c.prix ? '💵 ' + c.prix : '', c.note].filter(Boolean).join(' · ');
-    const row = el(`<div class="item"><span class="ic">🏁</span><span class="grow"><div class="t">${escape(c.name)}</div>${sub ? `<div class="s" style="white-space:normal">${escape(sub)}</div>` : ''}</span>${rChip(c.rating)}<button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
+    const mapsUrl = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent([c.name, c.location, 'Tétouan'].filter(Boolean).join(' '));
+    const row = el(`<div class="item"><span class="ic">🏁</span><span class="grow"><div class="t">${escape(c.name)}</div>${sub ? `<div class="s" style="white-space:normal">${escape(sub)}</div>` : ''}</span>${rChip(c.rating)}<a class="btn gray sm" href="${mapsUrl}" target="_blank" rel="noopener" title="Voir sur Maps">📍</a><button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
     $('[data-e]', row).onclick = () => garageItemModal('concurrent', c);
     $('[data-x]', row).onclick = () => { if (confirm('Supprimer ?')) { g.concurrents = g.concurrents.filter(x => x !== c); save(); router(); } };
     clist.append(row);
