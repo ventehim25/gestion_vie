@@ -80,14 +80,7 @@ function seed() {
       agenda: [],
       tx: [],
     },
-    projects: [
-      { id: uid(), title: 'Appartement pour habiter', type: 'Logement', cost: 0, priority: 1, status: 'reflexion',
-        pros: ['Sécurité de la famille', 'Stabilité'], cons: ['Bloque du capital', 'Mensualités'], notes: '' },
-      { id: uid(), title: 'Garage locatif (revenu passif)', type: 'Investissement', cost: 0, priority: 2, status: 'reflexion',
-        pros: ['Revenu mensuel régulier', 'Modèle déjà prouvé'], cons: ['Ne règle pas le logement'], notes: '' },
-      { id: uid(), title: 'Agriculture + élevage', type: 'Investissement', cost: 0, priority: 3, status: 'en_attente',
-        pros: ['Terres déjà possédées', 'Potentiel élevage'], cons: ['Éloignement', 'Sécurité du terrain', 'Demande ma présence'], notes: '' },
-    ],
+    projects: [],
     garage: {
       budget: 0,
       notes: '',
@@ -1770,7 +1763,7 @@ function projModal(id) {
     ${field('Nom du projet', `<input id="p_t" value="${escape(cur.title)}" placeholder="ex: Garage à acheter" autofocus>`)}
     <div class="grid2">
       ${field('Catégorie', `<select id="p_type">${options(catChoices, cur.type)}</select>`)}
-      ${field('Lieu', `<input id="p_loc" value="${escape(cur.location || '')}" placeholder="ex: Benslimane">`)}
+      ${field('Lieu', `<input id="p_loc" value="${escape(cur.location || '')}" placeholder="ex: Tétouan">`)}
     </div>
     <div class="grid2">
       ${field('Budget (DH)', `<input id="p_c" type="number" inputmode="decimal" value="${cur.cost || ''}" placeholder="ex: 340000">`)}
