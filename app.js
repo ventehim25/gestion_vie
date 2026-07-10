@@ -554,8 +554,10 @@ function renderHome(v) {
 /* ============================================================
    BUDGET  (ma caisse : Moi / Business — Maman a son propre onglet)
    ============================================================ */
+let budgetMonth = monthOf(todayISO());
 function renderBudget(v) {
-  const m = monthOf(todayISO());
+  const m = budgetMonth;
+  const isCurMonth = m === monthOf(todayISO());
   const tx = monthTx(m).filter(isOwn).sort((a, b) => b.date.localeCompare(a.date));
   const tot = monthTotals(m);
 
@@ -566,6 +568,14 @@ function renderBudget(v) {
 
   v.append(el(`<div>
     <h1>💰 Budget</h1>
+    <div class="card">
+      <div class="row between">
+        <button class="btn gray sm" id="bPrev">‹ Préc.</button>
+        <b style="text-transform:capitalize;font-size:1.05rem">${moisLabel(m)}</b>
+        <button class="btn gray sm" id="bNext">Suiv. ›</button>
+      </div>
+      ${!isCurMonth ? `<div style="text-align:center;margin-top:8px"><a id="bCur" style="font-size:.82rem;color:var(--teal-d);cursor:pointer">↩ Revenir au mois courant</a></div>` : ''}
+    </div>
     <div class="grid3">
       <div class="stat"><div class="label">Entrées</div><div class="value pos">${fmtDH(tot.rev)}</div></div>
       <div class="stat"><div class="label">Sorties</div><div class="value neg">${fmtDH(tot.dep)}</div></div>
@@ -605,6 +615,9 @@ function renderBudget(v) {
   </div>`));
 
   v.append(el(`<button class="btn fab" id="fab">＋</button>`));
+  $('#bPrev', v).onclick = () => { budgetMonth = shiftMonth(budgetMonth, -1); router(); };
+  $('#bNext', v).onclick = () => { budgetMonth = shiftMonth(budgetMonth, 1); router(); };
+  const bCur = $('#bCur', v); if (bCur) bCur.onclick = () => { budgetMonth = monthOf(todayISO()); router(); };
   $('#fab', v).onclick = () => txModal();
   $('#addInc', v).onclick = () => recurModal('incomes');
   $('#addFix', v).onclick = () => recurModal('fixed');
@@ -662,12 +675,14 @@ function txRow(t) {
 }
 function txModal() {
   let type = 'depense';
+  const curMonth = monthOf(todayISO());
+  const defDate = (typeof budgetMonth !== 'undefined' && budgetMonth !== curMonth) ? budgetMonth + '-01' : todayISO();
   const body = `
     <div class="seg" id="segType"><button data-t="depense" class="active">－ Dépense</button><button data-t="revenu">＋ Revenu</button></div>
     ${field('Montant (DH)', '<input id="f_amt" type="number" inputmode="decimal" placeholder="0" autofocus>')}
     ${field('Caisse', `<select id="f_acc">${options(OWN_ACCOUNTS, 'Moi')}</select>`)}
     ${field('Catégorie', `<select id="f_cat">${options(CATS.depense)}</select>`)}
-    ${field('Date', `<input id="f_date" type="date" value="${todayISO()}">`)}
+    ${field('Date', `<input id="f_date" type="date" value="${defDate}">`)}
     ${field('Note (optionnel)', '<input id="f_note" placeholder="ex: courses Marjane">')}
     <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`;
   const bg = modal('Nouvelle opération', body);
