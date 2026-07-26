@@ -609,13 +609,15 @@ function renderBudget(v) {
 
     <div class="section-title">Entrées par catégorie (ce mois)</div>
     <div class="card">
+      <div class="row between" style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line)"><b>Total entrées</b><b class="amt pos" style="font-size:1.05rem">${fmtDH(tot.rev)}</b></div>
       ${catsRev.length ? catsRev.map(([c, n]) => `<div class="catrow" data-catrow="${escape(c)}" data-cattype="revenu" style="margin-bottom:10px;cursor:pointer"><div class="row between"><span>${escape(c)} <small>›</small></span><b class="pos">${fmtDH(n)}</b></div><div class="bar"><span style="width:${n / maxCatRev * 100}%;background:var(--green)"></span></div></div>`).join('') : '<div class="empty">Aucune entrée ce mois. Ajoute-en avec le bouton +.</div>'}
-      ${catsRev.length ? '<small>Touche une catégorie pour voir le détail (ex : Vente, Loyer garage, Salaire…).</small>' : ''}
+      ${catsRev.length ? '<small>Touche une catégorie pour voir le détail avec les dates (ex : Vente, Loyer garage, Salaire…).</small>' : ''}
     </div>
 
     <div class="section-title">Dépenses par catégorie (ce mois)</div>
     <div class="card">
-      ${cats.length ? cats.map(([c, n]) => `<div class="catrow" data-catrow="${escape(c)}" data-cattype="depense" style="margin-bottom:10px;cursor:pointer"><div class="row between"><span>${escape(c)} <small>›</small></span><b>${fmtDH(n)}</b></div><div class="bar"><span style="width:${n / maxCat * 100}%"></span></div></div>`).join('') : '<div class="empty">Aucune dépense ce mois. Ajoute-en avec le bouton +.</div>'}
+      <div class="row between" style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line)"><b>Total dépenses</b><b class="amt neg" style="font-size:1.05rem">${fmtDH(tot.dep)}</b></div>
+      ${cats.length ? cats.map(([c, n]) => `<div class="catrow" data-catrow="${escape(c)}" data-cattype="depense" style="margin-bottom:10px;cursor:pointer"><div class="row between"><span>${escape(c)} <small>›</small></span><b class="neg">${fmtDH(n)}</b></div><div class="bar"><span style="width:${n / maxCat * 100}%;background:var(--red)"></span></div></div>`).join('') : '<div class="empty">Aucune dépense ce mois. Ajoute-en avec le bouton +.</div>'}
       ${cats.length ? '<small>Touche une catégorie pour voir le détail (ex : viande, lait…) et repérer le gaspillage.</small>' : ''}
     </div>
 
@@ -671,13 +673,26 @@ function catDetailModal(cat, type = 'depense') {
   const isRev = type === 'revenu';
   const m = budgetMonth;
   const list = DB.transactions.filter(t => t.type === type && t.cat === cat && monthOf(t.date) === m && isOwn(t));
-  const groups = {};
-  list.forEach(t => { const k = t.note ? t.note : '(sans détail)'; groups[k] = (groups[k] || 0) + (+t.amount || 0); });
-  const rows = Object.entries(groups).sort((a, b) => b[1] - a[1]);
   const total = list.reduce((a, t) => a + (+t.amount || 0), 0);
+  let inner;
+  if (isRev) {
+    // Entrées : chaque opération avec sa date (le "quand" est important)
+    const sorted = list.slice().sort((a, b) => b.date.localeCompare(a.date));
+    inner = sorted.length
+      ? sorted.map(t => `<div class="item"><span class="ic">💵</span><span class="grow"><div class="t">${t.note ? escape(t.note) : '(sans détail)'}</div><div class="s">📅 ${t.date}</div></span><b class="amt pos">${fmtDH(t.amount)}</b></div>`).join('')
+      : '<div class="empty">Aucune entrée ce mois dans cette catégorie.</div>';
+  } else {
+    // Dépenses : regroupées par note pour repérer le gaspillage
+    const groups = {};
+    list.forEach(t => { const k = t.note ? t.note : '(sans détail)'; groups[k] = (groups[k] || 0) + (+t.amount || 0); });
+    const rows = Object.entries(groups).sort((a, b) => b[1] - a[1]);
+    inner = rows.length
+      ? rows.map(([k, n]) => `<div class="item"><span class="ic">🧺</span><span class="grow"><div class="t">${escape(k)}</div></span><b class="amt neg">${fmtDH(n)}</b></div>`).join('')
+      : '<div class="empty">Aucune dépense ce mois dans cette catégorie.</div>';
+  }
   const body = `
-    <div class="hint">${isRev ? 'Détail de tes entrées de cette catégorie ce mois. Astuce : écris la source dans la <b>note</b> (ex : client, vente…) pour t\'y retrouver.' : 'Astuce : écris le produit dans la <b>note</b> en ajoutant une dépense (ex : viande, lait, légumes). Ici tu vois où part l\'argent et tu repères le gaspillage.'}</div>
-    <div>${rows.length ? rows.map(([k, n]) => `<div class="item"><span class="ic">${isRev ? '💵' : '🧺'}</span><span class="grow"><div class="t">${escape(k)}</div></span><b class="amt ${isRev ? 'pos' : 'neg'}">${fmtDH(n)}</b></div>`).join('') : `<div class="empty">Aucune ${isRev ? 'entrée' : 'dépense'} ce mois dans cette catégorie.</div>`}</div>
+    <div class="hint">${isRev ? 'Tes entrées de cette catégorie ce mois, <b>avec les dates</b>.' : 'Astuce : écris le produit dans la <b>note</b> en ajoutant une dépense (ex : viande, lait, légumes). Ici tu vois où part l\'argent et tu repères le gaspillage.'}</div>
+    <div>${inner}</div>
     <div class="row between" style="margin-top:10px;font-weight:800;font-size:1.05rem"><span>Total ${escape(cat)}</span><span style="color:var(--${isRev ? 'green' : 'red'})">${fmtDH(total)}</span></div>
     <div class="modal-actions"><button class="btn" id="ok">Fermer</button></div>`;
   const bg = modal('Détail — ' + cat, body);
