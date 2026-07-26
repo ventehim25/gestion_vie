@@ -642,18 +642,29 @@ function renderBudget(v) {
   if (!unpaid.length) dl.append(el('<small>Personne ne te doit d\'argent. 👍</small>'));
   unpaid.forEach(d => {
     const row = el(`<div class="item"><span class="ic">💸</span>
-      <span class="grow"><div class="t">${escape(d.name)}</div><div class="s">${d.date}${d.note ? ' · ' + escape(d.note) : ''}</div></span>
+      <span class="grow" data-edit style="cursor:pointer"><div class="t">${escape(d.name)} <small>✎</small></div><div class="s">${d.date}${d.note ? ' · ' + escape(d.note) : ''}</div></span>
       <b class="amt pos">${fmtDH(d.amount)}</b>
       <button class="btn sm" data-paid title="Marquer payé">✓</button>
       <button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-edit]', row).onclick = () => debtModal(d.id);
     $('[data-paid]', row).onclick = () => { if (confirm(d.name + ' t\'a payé ' + fmtDH(d.amount) + ' ?')) { d.paid = true; save(); router(); } };
-    $('[data-x]', row).onclick = () => { DB.debts = DB.debts.filter(x => x !== d); save(); router(); };
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer cet impayé ?')) { DB.debts = DB.debts.filter(x => x !== d); save(); router(); } };
     dl.append(row);
   });
-  $('#addDebt', v).onclick = () => {
-    const bg = modal('Impayé — qui me doit', `${field('Nom (garage / station / client)', '<input id="d_n" autofocus placeholder="ex: Garage Sidi Kacem">')}${field('Montant (DH)', '<input id="d_a" type="number" inputmode="decimal">')}${field('Date', `<input id="d_d" type="date" value="${todayISO()}">`)}${field('Note', '<input id="d_note" placeholder="ex: filtres livrés">')}<div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Ajouter</button></div>`);
-    $('#cancel', bg).onclick = () => bg.remove();
-    $('#ok', bg).onclick = () => { const n = $('#d_n', bg).value.trim(); const a = +$('#d_a', bg).value; if (!n || !a) return; DB.debts.push({ id: uid(), name: n, amount: a, date: $('#d_d', bg).value, note: $('#d_note', bg).value.trim(), paid: false }); save(); bg.remove(); router(); };
+  $('#addDebt', v).onclick = () => debtModal();
+}
+function debtModal(id) {
+  const cur = id ? DB.debts.find(x => x.id === id) : { name: '', amount: 0, date: todayISO(), note: '' };
+  if (id && !cur) return;
+  const body = `${field('Nom (garage / station / client)', `<input id="d_n" autofocus placeholder="ex: Garage Sidi Kacem" value="${escape(cur.name || '')}">`)}${field('Montant (DH)', `<input id="d_a" type="number" inputmode="decimal" value="${cur.amount || ''}">`)}${field('Date', `<input id="d_d" type="date" value="${cur.date || todayISO()}">`)}${field('Note', `<input id="d_note" placeholder="ex: filtres livrés" value="${escape(cur.note || '')}">`)}<div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">${id ? 'Enregistrer' : 'Ajouter'}</button></div>`;
+  const bg = modal(id ? 'Modifier l\'impayé' : 'Impayé — qui me doit', body);
+  const cancel = $('#cancel', bg); if (cancel) cancel.onclick = () => bg.remove();
+  const del = $('#del', bg); if (del) del.onclick = () => { if (confirm('Supprimer cet impayé ?')) { DB.debts = DB.debts.filter(x => x.id !== id); save(); bg.remove(); router(); } };
+  $('#ok', bg).onclick = () => {
+    const n = $('#d_n', bg).value.trim(); const a = +$('#d_a', bg).value; if (!n || !a) return;
+    const o = { name: n, amount: a, date: $('#d_d', bg).value, note: $('#d_note', bg).value.trim() };
+    if (id) Object.assign(cur, o); else DB.debts.push(Object.assign({ id: uid(), paid: false }, o));
+    save(); bg.remove(); router();
   };
 }
 function catDetailModal(cat, type = 'depense') {
