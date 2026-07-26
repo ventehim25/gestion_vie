@@ -1316,7 +1316,7 @@ function renderMaman(v) {
 function mamanLedgerList(c, arr, type) {
   if (!arr.length) { c.append(el(`<small>${type === 'revenu' ? 'Aucun revenu' : 'Aucune charge'} ce mois.</small>`)); return; }
   arr.forEach(x => {
-    const row = el(`<div class="item"><span class="ic">${type === 'revenu' ? '💵' : '🧾'}</span><span class="grow"><div class="t">${escape(x.label)}</div></span><b class="amt ${type === 'revenu' ? 'pos' : 'neg'}">${fmtDH(x.amount)}</b><button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
+    const row = el(`<div class="item"><span class="ic">${type === 'revenu' ? '💵' : '🧾'}</span><span class="grow" data-e style="cursor:pointer"><div class="t">${escape(x.label)} <small>✎</small></div></span><b class="amt ${type === 'revenu' ? 'pos' : 'neg'}">${fmtDH(x.amount)}</b><button class="btn gray sm" data-x>✕</button></div>`);
     $('[data-e]', row).onclick = () => mamanItemModal(type, x.id);
     $('[data-x]', row).onclick = () => { DB.mother.ledger[mamanMonth] = (DB.mother.ledger[mamanMonth] || []).filter(y => y.id !== x.id); save(); router(); };
     c.append(row);
@@ -1383,7 +1383,7 @@ function mamanSolde() {
 }
 function farmRow(t) {
   return `<div class="item"><span class="ic">${t.type === 'revenu' ? '＋' : '－'}</span>
-    <span class="grow"><div class="t">${escape(t.cat)}${t.note ? ' · ' + escape(t.note) : ''}</div>
+    <span class="grow" data-edit-farm="${t.id}" style="cursor:pointer"><div class="t">${escape(t.cat)}${t.note ? ' · ' + escape(t.note) : ''} <small>✎</small></div>
     <div class="s">${t.date} · <span class="chip ${t.caisse === 'perso' ? 'moi' : 'maman'}">${FARM_CAISSES[t.caisse]}</span></div></span>
     <b class="amt ${t.type === 'revenu' ? 'pos' : 'neg'}">${t.type === 'revenu' ? '+' : '-'}${fmtDH(t.amount)}</b>
     <button class="btn gray sm" data-del-farm="${t.id}">✕</button></div>`;
@@ -1424,7 +1424,7 @@ function renderFerme(v) {
       <div class="row between" style="margin-top:10px"><span>👵 Part grand-mère <small>(${tsp.gmN}/${tsp.tot})</small></span><b class="amt neg">${fmtDH(tsp.gm)}</b></div>
       <div class="bar"><span style="width:${tsp.tot ? tsp.gmN / tsp.tot * 100 : 0}%"></span></div>
       <button class="btn block ghost sm" id="addOlive" style="margin-top:12px">➕ Décrire une dépense oliviers</button>
-      ${oliveDep.length ? `<div style="margin-top:8px"><small>Dépenses oliviers décrites :</small>${oliveDep.map(t => `<div class="item"><span class="ic">🫒</span><span class="grow"><div class="t">${escape(t.cat)}${t.note ? ' · ' + escape(t.note) : ''}</div><div class="s">${t.date}</div></span><b class="amt neg">${fmtDH(t.amount)}</b><button class="btn gray sm" data-del-farm="${t.id}">✕</button></div>`).join('')}</div>` : ''}
+      ${oliveDep.length ? `<div style="margin-top:8px"><small>Dépenses oliviers décrites :</small>${oliveDep.map(t => `<div class="item"><span class="ic">🫒</span><span class="grow" data-edit-farm="${t.id}" style="cursor:pointer"><div class="t">${escape(t.cat)}${t.note ? ' · ' + escape(t.note) : ''} <small>✎</small></div><div class="s">${t.date}</div></span><b class="amt neg">${fmtDH(t.amount)}</b><button class="btn gray sm" data-del-farm="${t.id}">✕</button></div>`).join('')}</div>` : ''}
     </div>
 
     <div class="section-title">🐑 Moutons</div>
@@ -1493,7 +1493,8 @@ function renderFerme(v) {
   $('#yPrev', v).onclick = () => { farmYear--; router(); };
   $('#yNext', v).onclick = () => { farmYear++; router(); };
   v.querySelectorAll('#farmFilter button').forEach(b => b.onclick = () => { farmFilter = b.dataset.f; router(); });
-  v.querySelectorAll('[data-del-farm]').forEach(b => b.onclick = () => { DB.farm.tx = DB.farm.tx.filter(t => t.id !== b.dataset.delFarm); save(); router(); });
+  v.querySelectorAll('[data-edit-farm]').forEach(elm => elm.onclick = () => farmOpModal(undefined, elm.dataset.editFarm));
+  v.querySelectorAll('[data-del-farm]').forEach(b => b.onclick = () => { if (confirm('Supprimer ce mouvement ?')) { DB.farm.tx = DB.farm.tx.filter(t => t.id !== b.dataset.delFarm); save(); router(); } });
   v.querySelectorAll('[data-open]').forEach(b => b.onclick = () => {
     const c = b.dataset.open;
     const bg = modal('Solde de départ — ' + FARM_CAISSES[c], `<p><small>Argent déjà présent dans cette caisse avant le suivi.</small></p>${field('Montant (DH)', `<input id="o_v" type="number" inputmode="decimal" value="${DB.farm.opening[c] || ''}">`)}<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
@@ -1505,21 +1506,12 @@ function renderFerme(v) {
   const harv = DB.farm.harvest.slice().sort((a, b) => (b.year || 0) - (a.year || 0));
   if (!harv.length) hl.append(el('<small>Note chaque saison : kg récoltés, litres d\'huile, prix de vente.</small>'));
   harv.forEach(h => {
-    const row = el(`<div class="item"><span class="ic">🫒</span><span class="grow"><div class="t">Saison ${h.year} — ${h.kg || 0} kg · ${h.litres || 0} L d'huile</div><div class="s">${h.prix ? 'Vente : ' + fmtDH(h.prix) : ''}${h.note ? ' · ' + escape(h.note) : ''}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
-    $('[data-x]', row).onclick = () => { DB.farm.harvest = DB.farm.harvest.filter(x => x.id !== h.id); save(); router(); };
+    const row = el(`<div class="item"><span class="ic">🫒</span><span class="grow" data-e style="cursor:pointer"><div class="t">Saison ${h.year} — ${h.kg || 0} kg · ${h.litres || 0} L d'huile <small>✎</small></div><div class="s">${h.prix ? 'Vente : ' + fmtDH(h.prix) : ''}${h.note ? ' · ' + escape(h.note) : ''}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-e]', row).onclick = () => harvestModal(h.id);
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer cette saison ?')) { DB.farm.harvest = DB.farm.harvest.filter(x => x.id !== h.id); save(); router(); } };
     hl.append(row);
   });
-  $('#addHarvest', v).onclick = () => {
-    const bg = modal('Récolte d\'olives', `
-      ${field('Année / saison', `<input id="h_y" type="number" inputmode="numeric" value="${new Date().getFullYear()}">`)}
-      ${field('Kg d\'olives récoltés', '<input id="h_kg" type="number" inputmode="decimal">')}
-      ${field('Litres d\'huile', '<input id="h_l" type="number" inputmode="decimal">')}
-      ${field('Montant des ventes (DH)', '<input id="h_p" type="number" inputmode="decimal">')}
-      ${field('Note', '<input id="h_n" placeholder="ex: pressoir, prix/L…">')}
-      <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
-    $('#cancel', bg).onclick = () => bg.remove();
-    $('#ok', bg).onclick = () => { DB.farm.harvest.push({ id: uid(), year: +$('#h_y', bg).value || new Date().getFullYear(), kg: +$('#h_kg', bg).value || 0, litres: +$('#h_l', bg).value || 0, prix: +$('#h_p', bg).value || 0, note: $('#h_n', bg).value.trim() }); save(); bg.remove(); router(); };
-  };
+  $('#addHarvest', v).onclick = () => harvestModal();
 
   // Agenda agricole
   const al = $('#agendaList', v);
@@ -1528,20 +1520,14 @@ function renderFerme(v) {
   ag.forEach(a => {
     const dl = daysUntil(a.date);
     const row = el(`<div class="item"><span class="check ${a.done ? 'on' : ''}">${a.done ? '✓' : ''}</span><span class="ic">🌳</span>
-      <span class="grow"><div class="t" style="${a.done ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(a.task)}</div><div class="s">${a.date}${!a.done && dl >= 0 && dl <= 14 ? ' · dans ' + dl + ' j' : ''}</div></span>
+      <span class="grow" data-e style="cursor:pointer"><div class="t" style="${a.done ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(a.task)} <small>✎</small></div><div class="s">${a.date}${!a.done && dl >= 0 && dl <= 14 ? ' · dans ' + dl + ' j' : ''}</div></span>
       <button class="btn gray sm" data-x>✕</button></div>`);
     $('.check', row).onclick = () => { a.done = !a.done; save(); router(); };
-    $('[data-x]', row).onclick = () => { DB.farm.agenda = DB.farm.agenda.filter(x => x.id !== a.id); save(); router(); };
+    $('[data-e]', row).onclick = () => agendaModal(a.id);
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer cette tâche ?')) { DB.farm.agenda = DB.farm.agenda.filter(x => x.id !== a.id); save(); router(); } };
     al.append(row);
   });
-  $('#addAgenda', v).onclick = () => {
-    const bg = modal('Travail agricole', `
-      ${field('Tâche', '<input id="a_t" placeholder="ex: taille des oliviers, irrigation…" autofocus>')}
-      ${field('Date prévue', `<input id="a_d" type="date" value="${todayISO()}">`)}
-      <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Ajouter</button></div>`);
-    $('#cancel', bg).onclick = () => bg.remove();
-    $('#ok', bg).onclick = () => { const t = $('#a_t', bg).value.trim(); if (!t) return; DB.farm.agenda.push({ id: uid(), task: t, date: $('#a_d', bg).value, done: false }); save(); bg.remove(); router(); };
-  };
+  $('#addAgenda', v).onclick = () => agendaModal();
 
   // Arbres
   $('#editTrees', v).onclick = () => {
@@ -1560,43 +1546,51 @@ function renderFerme(v) {
   log.forEach(e => {
     const signHeads = (e.type === 'vente' || e.type === 'perte') ? '−' : '+';
     const row = el(`<div class="item"><span class="ic">${SHEEP_IC[e.type] || '🐑'}</span>
-      <span class="grow"><div class="t">${signHeads}${e.heads} tête(s) · ${e.type}${e.note ? ' · ' + escape(e.note) : ''}</div><div class="s">${e.date}${e.amount ? ' · ' + fmtDH(e.amount) : ''}</div></span>
+      <span class="grow" data-e style="cursor:pointer"><div class="t">${signHeads}${e.heads} tête(s) · ${e.type}${e.note ? ' · ' + escape(e.note) : ''} <small>✎</small></div><div class="s">${e.date}${e.amount ? ' · ' + fmtDH(e.amount) : ''}</div></span>
       <button class="btn gray sm" data-x>✕</button></div>`);
-    $('[data-x]', row).onclick = () => { DB.farm.sheep.log = DB.farm.sheep.log.filter(x => x.id !== e.id); save(); router(); };
+    $('[data-e]', row).onclick = () => sheepModal(e.id);
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer ce mouvement ?')) { DB.farm.sheep.log = DB.farm.sheep.log.filter(x => x.id !== e.id); save(); router(); } };
     sl.append(row);
   });
   $('#addSheep', v).onclick = () => sheepModal();
 }
-function sheepModal() {
+function sheepModal(id) {
+  const cur = id ? DB.farm.sheep.log.find(e => e.id === id) : null;
+  if (id && !cur) return;
   const types = { achat: 'Achat (+ têtes, − argent)', vente: 'Vente (− têtes, + argent)', naissance: 'Naissance (+ têtes)', perte: 'Perte / mort (− têtes)' };
   const body = `
-    ${field('Type', `<select id="s_type">${Object.entries(types).map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select>`)}
-    ${field('Nombre de têtes', '<input id="s_h" type="number" inputmode="numeric" value="1" autofocus>')}
-    ${field('Montant (DH) — achat ou vente', '<input id="s_a" type="number" inputmode="decimal" placeholder="0">')}
-    ${field('Date', `<input id="s_d" type="date" value="${todayISO()}">`)}
-    ${field('Note (optionnel)', '<input id="s_n" placeholder="ex: souk El Arbaa">')}
-    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`;
-  const bg = modal('Mouvement — moutons', body);
-  $('#cancel', bg).onclick = () => bg.remove();
+    ${field('Type', `<select id="s_type">${Object.entries(types).map(([k, l]) => `<option value="${k}" ${cur && cur.type === k ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
+    ${field('Nombre de têtes', `<input id="s_h" type="number" inputmode="numeric" value="${cur ? cur.heads : 1}" autofocus>`)}
+    ${field('Montant (DH) — achat ou vente', `<input id="s_a" type="number" inputmode="decimal" placeholder="0" value="${cur ? (cur.amount || '') : ''}">`)}
+    ${field('Date', `<input id="s_d" type="date" value="${cur ? cur.date : todayISO()}">`)}
+    ${field('Note (optionnel)', `<input id="s_n" placeholder="ex: souk El Arbaa" value="${cur ? escape(cur.note || '') : ''}">`)}
+    <div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">Enregistrer</button></div>`;
+  const bg = modal(id ? 'Modifier le mouvement' : 'Mouvement — moutons', body);
+  const cancel = $('#cancel', bg); if (cancel) cancel.onclick = () => bg.remove();
+  const del = $('#del', bg); if (del) del.onclick = () => { if (confirm('Supprimer ce mouvement ?')) { DB.farm.sheep.log = DB.farm.sheep.log.filter(e => e.id !== id); save(); bg.remove(); router(); } };
   $('#ok', bg).onclick = () => {
     const heads = +$('#s_h', bg).value || 0;
     if (!heads) { $('#s_h', bg).focus(); return; }
-    DB.farm.sheep.log.push({ id: uid(), type: $('#s_type', bg).value, heads, amount: +$('#s_a', bg).value || 0, date: $('#s_d', bg).value, note: $('#s_n', bg).value.trim() });
+    const o = { type: $('#s_type', bg).value, heads, amount: +$('#s_a', bg).value || 0, date: $('#s_d', bg).value, note: $('#s_n', bg).value.trim() };
+    if (id) Object.assign(cur, o); else DB.farm.sheep.log.push(Object.assign({ id: uid() }, o));
     save(); bg.remove(); router();
   };
 }
-function farmOpModal(defCaisse) {
-  let type = 'depense';
+function farmOpModal(defCaisse, id) {
+  const cur = id ? DB.farm.tx.find(t => t.id === id) : null;
+  if (id && !cur) return;
+  let type = cur ? cur.type : 'depense';
+  const caisse0 = cur ? cur.caisse : defCaisse;
   const body = `
-    <div class="seg" id="segType"><button data-t="depense" class="active">－ Dépense</button><button data-t="revenu">＋ Rentrée</button></div>
-    ${field('Caisse', `<select id="f_caisse">${Object.entries(FARM_CAISSES).map(([k, l]) => `<option value="${k}" ${k === defCaisse ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
-    <div class="hint" id="caisseHint" style="display:${defCaisse === 'partage' ? 'block' : 'none'}">Caisse partagée = oliviers uniquement (réparti avec grand-mère).</div>
-    ${field('Montant (DH)', '<input id="f_amt" type="number" inputmode="decimal" placeholder="0" autofocus>')}
-    ${field('Motif', `<select id="f_cat">${options(FARM_CATS.depense, defCaisse === 'partage' ? 'Oliviers' : '')}</select>`)}
-    ${field('Date', `<input id="f_date" type="date" value="${todayISO()}">`)}
-    ${field('Détail / description de la dépense', '<input id="f_note" placeholder="ex: taille des oliviers, 2 sacs d’engrais, ouvrier 1 jour…">')}
-    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`;
-  const bg = modal('Mouvement — ferme', body);
+    <div class="seg" id="segType"><button data-t="depense" class="${type === 'depense' ? 'active' : ''}">－ Dépense</button><button data-t="revenu" class="${type === 'revenu' ? 'active' : ''}">＋ Rentrée</button></div>
+    ${field('Caisse', `<select id="f_caisse">${Object.entries(FARM_CAISSES).map(([k, l]) => `<option value="${k}" ${k === caisse0 ? 'selected' : ''}>${l}</option>`).join('')}</select>`)}
+    <div class="hint" id="caisseHint" style="display:${caisse0 === 'partage' ? 'block' : 'none'}">Caisse partagée = oliviers uniquement (réparti avec grand-mère).</div>
+    ${field('Montant (DH)', `<input id="f_amt" type="number" inputmode="decimal" placeholder="0" value="${cur ? cur.amount : ''}" autofocus>`)}
+    ${field('Motif', `<select id="f_cat">${options(FARM_CATS[type], cur ? cur.cat : (caisse0 === 'partage' ? 'Oliviers' : ''))}</select>`)}
+    ${field('Date', `<input id="f_date" type="date" value="${cur ? cur.date : todayISO()}">`)}
+    ${field('Détail / description de la dépense', `<input id="f_note" placeholder="ex: taille des oliviers, 2 sacs d’engrais, ouvrier 1 jour…" value="${cur ? escape(cur.note || '') : ''}">`)}
+    <div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">Enregistrer</button></div>`;
+  const bg = modal(id ? 'Modifier le mouvement' : 'Mouvement — ferme', body);
   bg.querySelectorAll('#segType button').forEach(b => b.onclick = () => {
     bg.querySelectorAll('#segType button').forEach(x => x.classList.remove('active'));
     b.classList.add('active'); type = b.dataset.t; $('#f_cat', bg).innerHTML = options(FARM_CATS[type]);
@@ -1607,11 +1601,47 @@ function farmOpModal(defCaisse) {
     $('#caisseHint', bg).style.display = partage ? 'block' : 'none';
     if (partage && type === 'depense') $('#f_cat', bg).value = 'Oliviers';
   };
-  $('#cancel', bg).onclick = () => bg.remove();
+  const cancel = $('#cancel', bg); if (cancel) cancel.onclick = () => bg.remove();
+  const del = $('#del', bg); if (del) del.onclick = () => { if (confirm('Supprimer ce mouvement ?')) { DB.farm.tx = DB.farm.tx.filter(t => t.id !== id); save(); bg.remove(); router(); } };
   $('#ok', bg).onclick = () => {
     const amount = +$('#f_amt', bg).value;
     if (!amount) { $('#f_amt', bg).focus(); return; }
-    DB.farm.tx.push({ id: uid(), type, amount, caisse: $('#f_caisse', bg).value, cat: $('#f_cat', bg).value, date: $('#f_date', bg).value, note: $('#f_note', bg).value.trim() });
+    const o = { type, amount, caisse: $('#f_caisse', bg).value, cat: $('#f_cat', bg).value, date: $('#f_date', bg).value, note: $('#f_note', bg).value.trim() };
+    if (id) Object.assign(cur, o); else DB.farm.tx.push(Object.assign({ id: uid() }, o));
+    save(); bg.remove(); router();
+  };
+}
+function harvestModal(id) {
+  const cur = id ? DB.farm.harvest.find(h => h.id === id) : null;
+  if (id && !cur) return;
+  const bg = modal(id ? 'Modifier la récolte' : 'Récolte d\'olives', `
+    ${field('Année / saison', `<input id="h_y" type="number" inputmode="numeric" value="${cur ? cur.year : new Date().getFullYear()}">`)}
+    ${field('Kg d\'olives récoltés', `<input id="h_kg" type="number" inputmode="decimal" value="${cur ? (cur.kg || '') : ''}">`)}
+    ${field('Litres d\'huile', `<input id="h_l" type="number" inputmode="decimal" value="${cur ? (cur.litres || '') : ''}">`)}
+    ${field('Montant des ventes (DH)', `<input id="h_p" type="number" inputmode="decimal" value="${cur ? (cur.prix || '') : ''}">`)}
+    ${field('Note', `<input id="h_n" placeholder="ex: pressoir, prix/L…" value="${cur ? escape(cur.note || '') : ''}">`)}
+    <div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">Enregistrer</button></div>`);
+  const cancel = $('#cancel', bg); if (cancel) cancel.onclick = () => bg.remove();
+  const del = $('#del', bg); if (del) del.onclick = () => { if (confirm('Supprimer cette saison ?')) { DB.farm.harvest = DB.farm.harvest.filter(x => x.id !== id); save(); bg.remove(); router(); } };
+  $('#ok', bg).onclick = () => {
+    const o = { year: +$('#h_y', bg).value || new Date().getFullYear(), kg: +$('#h_kg', bg).value || 0, litres: +$('#h_l', bg).value || 0, prix: +$('#h_p', bg).value || 0, note: $('#h_n', bg).value.trim() };
+    if (id) Object.assign(cur, o); else DB.farm.harvest.push(Object.assign({ id: uid() }, o));
+    save(); bg.remove(); router();
+  };
+}
+function agendaModal(id) {
+  const cur = id ? DB.farm.agenda.find(a => a.id === id) : null;
+  if (id && !cur) return;
+  const bg = modal(id ? 'Modifier la tâche' : 'Travail agricole', `
+    ${field('Tâche', `<input id="a_t" placeholder="ex: taille des oliviers, irrigation…" value="${cur ? escape(cur.task || '') : ''}" autofocus>`)}
+    ${field('Date prévue', `<input id="a_d" type="date" value="${cur ? cur.date : todayISO()}">`)}
+    <div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">Enregistrer</button></div>`);
+  const cancel = $('#cancel', bg); if (cancel) cancel.onclick = () => bg.remove();
+  const del = $('#del', bg); if (del) del.onclick = () => { if (confirm('Supprimer cette tâche ?')) { DB.farm.agenda = DB.farm.agenda.filter(x => x.id !== id); save(); bg.remove(); router(); } };
+  $('#ok', bg).onclick = () => {
+    const t = $('#a_t', bg).value.trim(); if (!t) return;
+    const o = { task: t, date: $('#a_d', bg).value };
+    if (id) Object.assign(cur, o); else DB.farm.agenda.push(Object.assign({ id: uid(), done: false }, o));
     save(); bg.remove(); router();
   };
 }
