@@ -1128,9 +1128,10 @@ function renderFamille(v) {
     $('[data-del-kid]', card).onclick = () => { if (confirm('Supprimer ' + k.name + ' ?')) { DB.kids = DB.kids.filter(x => x.id !== k.id); save(); router(); } };
     const lc = $('.list', card);
     (k.items || []).forEach(it => {
-      const row = el(`<div class="item"><span class="check ${it.done ? 'on' : ''}">${it.done ? '✓' : ''}</span><span class="grow"><div class="t" style="${it.done ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(it.text)}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
+      const row = el(`<div class="item"><span class="check ${it.done ? 'on' : ''}">${it.done ? '✓' : ''}</span><span class="grow" data-e style="cursor:pointer"><div class="t" style="${it.done ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(it.text)} <small>✎</small></div></span><button class="btn gray sm" data-x>✕</button></div>`);
       $('.check', row).onclick = () => { it.done = !it.done; save(); router(); };
-      $('[data-x]', row).onclick = () => { k.items = k.items.filter(x => x !== it); save(); router(); };
+      $('[data-e]', row).onclick = () => { const t = prompt('Modifier :', it.text); if (t !== null) { it.text = t.trim() || it.text; save(); router(); } };
+      $('[data-x]', row).onclick = () => { if (confirm('Supprimer ?')) { k.items = k.items.filter(x => x !== it); save(); router(); } };
       lc.append(row);
     });
     const add = () => { const inp = $('[data-kid-item]', card); const t = inp.value.trim(); if (!t) return; k.items = k.items || []; k.items.push({ text: t, done: false }); save(); router(); };
@@ -1287,27 +1288,21 @@ function renderMaman(v) {
   if (!DB.mother.meds.length) mc.append(el('<small>Aucun médicament enregistré.</small>'));
   DB.mother.meds.forEach(med => {
     const times = (med.times || []).join(' · ');
-    const row = el(`<div class="item"><span class="ic">💊</span><span class="grow"><div class="t">${escape(med.name)}</div><div class="s">${escape(med.schedule || '')}${times ? ' · ⏰ ' + escape(times) : ''}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
-    $('[data-x]', row).onclick = () => { DB.mother.meds = DB.mother.meds.filter(x => x !== med); save(); router(); };
+    const row = el(`<div class="item"><span class="ic">💊</span><span class="grow" data-e style="cursor:pointer"><div class="t">${escape(med.name)} <small>✎</small></div><div class="s">${escape(med.schedule || '')}${times ? ' · ⏰ ' + escape(times) : ''}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-e]', row).onclick = () => medModal(med);
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer ce médicament ?')) { DB.mother.meds = DB.mother.meds.filter(x => x !== med); save(); scheduleMedReminder(); router(); } };
     mc.append(row);
   });
   $('#medICS', v).onclick = () => exportMedICS();
-  $('#addMed', v).onclick = () => {
-    const bg = modal('Médicament', `${field('Nom', '<input id="m_n" autofocus>')}${field('Posologie', '<input id="m_s" placeholder="ex: 1 comprimé">')}${field('Heures de prise (ex: 08:00, 14:00, 20:00)', '<input id="m_h" placeholder="08:00, 20:00">')}<div class="modal-actions"><button class="btn" id="ok">Ajouter</button></div>`);
-    $('#ok', bg).onclick = () => {
-      const n = $('#m_n', bg).value.trim(); if (!n) return;
-      const times = $('#m_h', bg).value.split(',').map(s => s.trim()).filter(s => /^\d{1,2}:\d{2}$/.test(s));
-      DB.mother.meds.push({ name: n, schedule: $('#m_s', bg).value.trim(), times });
-      save(); bg.remove(); scheduleMedReminder(); router();
-    };
-  };
+  $('#addMed', v).onclick = () => medModal();
 
   // CNSS
   const cc = $('#cnss', v);
   DB.mother.cnss.forEach(s => {
-    const row = el(`<div class="item"><span class="check ${s.done ? 'on' : ''}">${s.done ? '✓' : ''}</span><span class="grow"><div class="t" style="${s.done ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(s.label)}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
+    const row = el(`<div class="item"><span class="check ${s.done ? 'on' : ''}">${s.done ? '✓' : ''}</span><span class="grow" data-e style="cursor:pointer"><div class="t" style="${s.done ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(s.label)} <small>✎</small></div></span><button class="btn gray sm" data-x>✕</button></div>`);
     $('.check', row).onclick = () => { s.done = !s.done; save(); router(); };
-    $('[data-x]', row).onclick = () => { DB.mother.cnss = DB.mother.cnss.filter(x => x !== s); save(); router(); };
+    $('[data-e]', row).onclick = () => { const t = prompt('Modifier l\'étape :', s.label); if (t !== null) { s.label = t.trim() || s.label; save(); router(); } };
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer cette étape ?')) { DB.mother.cnss = DB.mother.cnss.filter(x => x !== s); save(); router(); } };
     cc.append(row);
   });
   $('#addCnss', v).onclick = () => { const t = prompt('Nouvelle étape du dossier :'); if (t) { DB.mother.cnss.push({ id: uid(), label: t, done: false }); save(); router(); } };
@@ -1335,6 +1330,19 @@ function mamanItemModal(type, id) {
   if ($('#cancel', bg)) $('#cancel', bg).onclick = () => bg.remove();
   if (id) $('#del', bg).onclick = () => { DB.mother.ledger[mamanMonth] = arr.filter(x => x.id !== id); save(); bg.remove(); router(); };
   $('#ok', bg).onclick = () => { const o = { type, label: $('#mi_l', bg).value.trim() || '(sans nom)', amount: +$('#mi_a', bg).value || 0 }; if (id) Object.assign(cur, o); else arr.push(Object.assign({ id: uid() }, o)); save(); bg.remove(); router(); };
+}
+function medModal(med) {
+  const cur = med || null;
+  const bg = modal(cur ? 'Modifier le médicament' : 'Médicament', `${field('Nom', `<input id="m_n" value="${cur ? escape(cur.name) : ''}" autofocus>`)}${field('Posologie', `<input id="m_s" value="${cur ? escape(cur.schedule || '') : ''}" placeholder="ex: 1 comprimé">`)}${field('Heures de prise (ex: 08:00, 14:00, 20:00)', `<input id="m_h" value="${cur ? escape((cur.times || []).join(', ')) : ''}" placeholder="08:00, 20:00">`)}<div class="modal-actions">${cur ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">Enregistrer</button></div>`);
+  const cancel = $('#cancel', bg); if (cancel) cancel.onclick = () => bg.remove();
+  const del = $('#del', bg); if (del) del.onclick = () => { if (confirm('Supprimer ce médicament ?')) { DB.mother.meds = DB.mother.meds.filter(x => x !== cur); save(); bg.remove(); scheduleMedReminder(); router(); } };
+  $('#ok', bg).onclick = () => {
+    const n = $('#m_n', bg).value.trim(); if (!n) return;
+    const times = $('#m_h', bg).value.split(',').map(s => s.trim()).filter(s => /^\d{1,2}:\d{2}$/.test(s));
+    const o = { name: n, schedule: $('#m_s', bg).value.trim(), times };
+    if (cur) Object.assign(cur, o); else DB.mother.meds.push(o);
+    save(); bg.remove(); scheduleMedReminder(); router();
+  };
 }
 
 /* ============================================================
@@ -1783,7 +1791,16 @@ function renderSpirituel(v) {
   const ql = $('#qlist', v);
   const q = DB.spiritual.quran.slice().reverse().slice(0, 10);
   if (!q.length) ql.append(el('<small>Note ta lecture quotidienne.</small>'));
-  q.forEach(x => ql.append(el(`<div class="item"><span class="ic">📖</span><span class="grow"><div class="t">${x.pages} pages</div><div class="s">${x.date}</div></span></div>`)));
+  q.forEach(x => {
+    const row = el(`<div class="item"><span class="ic">📖</span><span class="grow" data-e style="cursor:pointer"><div class="t">${x.pages} pages <small>✎</small></div><div class="s">${x.date}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-e]', row).onclick = () => {
+      const bg = modal('Modifier la lecture', `${field('Pages lues', `<input id="q_p" type="number" inputmode="numeric" value="${x.pages || ''}" autofocus>`)}${field('Date', `<input id="q_d" type="date" value="${x.date}">`)}<div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
+      $('#cancel', bg).onclick = () => bg.remove();
+      $('#ok', bg).onclick = () => { const p = +$('#q_p', bg).value; if (!p) return; x.pages = p; x.date = $('#q_d', bg).value || x.date; save(); bg.remove(); router(); };
+    };
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer cette lecture ?')) { DB.spiritual.quran = DB.spiritual.quran.filter(y => y !== x); save(); router(); } };
+    ql.append(row);
+  });
   $('#addQ', v).onclick = () => {
     const bg = modal('Lecture du Coran', `${field('Pages lues aujourd\'hui', '<input id="q_p" type="number" inputmode="numeric" autofocus>')}<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
     $('#ok', bg).onclick = () => { const p = +$('#q_p', bg).value; if (!p) return; DB.spiritual.quran.push({ date: todayISO(), pages: p }); save(); bg.remove(); router(); };
@@ -1792,7 +1809,16 @@ function renderSpirituel(v) {
   const sl = $('#slist', v);
   const s = DB.spiritual.sadaqa.slice().reverse().slice(0, 10);
   if (!s.length) sl.append(el('<small>Garde une trace de tes dons.</small>'));
-  s.forEach(x => sl.append(el(`<div class="item"><span class="ic">🤲</span><span class="grow"><div class="t">${fmtDH(x.amount)}${x.note ? ' · ' + escape(x.note) : ''}</div><div class="s">${x.date}</div></span></div>`)));
+  s.forEach(x => {
+    const row = el(`<div class="item"><span class="ic">🤲</span><span class="grow" data-e style="cursor:pointer"><div class="t">${fmtDH(x.amount)}${x.note ? ' · ' + escape(x.note) : ''} <small>✎</small></div><div class="s">${x.date}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
+    $('[data-e]', row).onclick = () => {
+      const bg = modal('Modifier le don', `${field('Montant (DH)', `<input id="s_a" type="number" inputmode="decimal" value="${x.amount || ''}" autofocus>`)}${field('Note', `<input id="s_n" value="${escape(x.note || '')}" placeholder="ex: mosquée">`)}${field('Date', `<input id="s_d" type="date" value="${x.date}">`)}<div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
+      $('#cancel', bg).onclick = () => bg.remove();
+      $('#ok', bg).onclick = () => { const a = +$('#s_a', bg).value; if (!a) return; x.amount = a; x.note = $('#s_n', bg).value.trim(); x.date = $('#s_d', bg).value || x.date; save(); bg.remove(); router(); };
+    };
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer ce don ?')) { DB.spiritual.sadaqa = DB.spiritual.sadaqa.filter(y => y !== x); save(); router(); } };
+    sl.append(row);
+  });
   $('#addS', v).onclick = () => {
     const bg = modal('Sadaqa', `${field('Montant (DH)', '<input id="s_a" type="number" inputmode="decimal" autofocus>')}${field('Note', '<input id="s_n" placeholder="ex: mosquée">')}<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>`);
     $('#ok', bg).onclick = () => {
