@@ -678,7 +678,8 @@ function renderBudget(v) {
   $('#fab', v).onclick = () => txModal();
   $('#addInc', v).onclick = () => recurModal('incomes');
   $('#addFix', v).onclick = () => recurModal('fixed');
-  v.querySelectorAll('[data-del-tx]').forEach(b => b.onclick = () => { DB.transactions = DB.transactions.filter(t => t.id !== b.dataset.delTx); save(); router(); });
+  v.querySelectorAll('[data-edit-tx]').forEach(elm => elm.onclick = () => txModal(elm.dataset.editTx));
+  v.querySelectorAll('[data-del-tx]').forEach(b => b.onclick = () => { if (confirm('Supprimer cette opération ?')) { DB.transactions = DB.transactions.filter(t => t.id !== b.dataset.delTx); save(); router(); } });
   v.querySelectorAll('[data-edit-recur]').forEach(b => b.onclick = () => recurModal(b.dataset.kind, b.dataset.editRecur));
   v.querySelectorAll('[data-catrow]').forEach(r => r.onclick = () => catDetailModal(r.dataset.catrow, r.dataset.cattype || 'depense'));
 
@@ -764,34 +765,38 @@ function recurRow(f, kind) {
 function txRow(t) {
   const s = escape(((t.cat || '') + ' ' + (t.note || '') + ' ' + (t.account || '')).toLowerCase());
   return `<div class="item" data-search="${s}"><span class="ic">${t.type === 'revenu' ? '＋' : '－'}</span>
-    <span class="grow"><div class="t">${escape(t.cat)}${t.note ? ' · ' + escape(t.note) : ''}</div>
+    <span class="grow" data-edit-tx="${t.id}" style="cursor:pointer"><div class="t">${escape(t.cat)}${t.note ? ' · ' + escape(t.note) : ''} <small>✎</small></div>
     <div class="s">${t.date} · <span class="chip ${t.account.toLowerCase()}">${t.account}</span></div></span>
     <b class="amt ${t.type === 'revenu' ? 'pos' : 'neg'}">${t.type === 'revenu' ? '+' : '-'}${fmtDH(t.amount)}</b>
     <button class="btn gray sm" data-del-tx="${t.id}">✕</button></div>`;
 }
-function txModal() {
-  let type = 'depense';
+function txModal(id) {
+  const cur = id ? DB.transactions.find(t => t.id === id) : null;
+  if (id && !cur) return;
+  let type = cur ? cur.type : 'depense';
   const curMonth = monthOf(todayISO());
-  const defDate = (typeof budgetMonth !== 'undefined' && budgetMonth !== curMonth) ? budgetMonth + '-01' : todayISO();
+  const defDate = cur ? cur.date : ((typeof budgetMonth !== 'undefined' && budgetMonth !== curMonth) ? budgetMonth + '-01' : todayISO());
   const body = `
-    <div class="seg" id="segType"><button data-t="depense" class="active">－ Dépense</button><button data-t="revenu">＋ Revenu</button></div>
-    ${field('Montant (DH)', '<input id="f_amt" type="number" inputmode="decimal" placeholder="0" autofocus>')}
-    ${field('Caisse', `<select id="f_acc">${options(OWN_ACCOUNTS, 'Moi')}</select>`)}
-    ${field('Catégorie', `<select id="f_cat">${options(CATS.depense)}</select>`)}
+    <div class="seg" id="segType"><button data-t="depense" class="${type === 'depense' ? 'active' : ''}">－ Dépense</button><button data-t="revenu" class="${type === 'revenu' ? 'active' : ''}">＋ Revenu</button></div>
+    ${field('Montant (DH)', `<input id="f_amt" type="number" inputmode="decimal" placeholder="0" value="${cur ? cur.amount : ''}" autofocus>`)}
+    ${field('Caisse', `<select id="f_acc">${options(OWN_ACCOUNTS, cur ? cur.account : 'Moi')}</select>`)}
+    ${field('Catégorie', `<select id="f_cat">${options(CATS[type], cur ? cur.cat : '')}</select>`)}
     ${field('Date', `<input id="f_date" type="date" value="${defDate}">`)}
-    ${field('Note (optionnel)', '<input id="f_note" placeholder="ex: courses Marjane">')}
-    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`;
-  const bg = modal('Nouvelle opération', body);
+    ${field('Note (optionnel)', `<input id="f_note" placeholder="ex: courses Marjane" value="${cur ? escape(cur.note || '') : ''}">`)}
+    <div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">${id ? 'Enregistrer' : 'Ajouter'}</button></div>`;
+  const bg = modal(id ? 'Modifier l\'opération' : 'Nouvelle opération', body);
   const setCats = () => { $('#f_cat', bg).innerHTML = options(CATS[type]); };
   bg.querySelectorAll('#segType button').forEach(b => b.onclick = () => {
     bg.querySelectorAll('#segType button').forEach(x => x.classList.remove('active'));
     b.classList.add('active'); type = b.dataset.t; setCats();
   });
-  $('#cancel', bg).onclick = () => bg.remove();
+  const cancel = $('#cancel', bg); if (cancel) cancel.onclick = () => bg.remove();
+  const del = $('#del', bg); if (del) del.onclick = () => { if (confirm('Supprimer cette opération ?')) { DB.transactions = DB.transactions.filter(t => t.id !== id); save(); bg.remove(); router(); } };
   $('#ok', bg).onclick = () => {
     const amount = +$('#f_amt', bg).value;
     if (!amount) { $('#f_amt', bg).focus(); return; }
-    DB.transactions.push({ id: uid(), type, amount, account: $('#f_acc', bg).value, cat: $('#f_cat', bg).value, date: $('#f_date', bg).value, note: $('#f_note', bg).value.trim() });
+    const o = { type, amount, account: $('#f_acc', bg).value, cat: $('#f_cat', bg).value, date: $('#f_date', bg).value, note: $('#f_note', bg).value.trim() };
+    if (id) Object.assign(cur, o); else DB.transactions.push(Object.assign({ id: uid() }, o));
     save(); bg.remove(); router();
   };
 }
