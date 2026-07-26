@@ -30,6 +30,7 @@ function seed() {
     capital: 0,
     savings: { goal: 20000, log: [] },
     debts: [],
+    budgetLimits: {},
     reminder: { enabled: false, time: '20:30' },
     theme: 'light',
     habits: [],
@@ -152,6 +153,7 @@ function migrate(d) {
   out.savings = Object.assign({}, s.savings, d.savings || {});
   if (!Array.isArray(out.savings.log)) out.savings.log = [];
   out.debts = Array.isArray(d.debts) ? d.debts : s.debts;
+  out.budgetLimits = (d.budgetLimits && typeof d.budgetLimits === 'object' && !Array.isArray(d.budgetLimits)) ? d.budgetLimits : {};
   out.echeances = Array.isArray(d.echeances) ? d.echeances : s.echeances;
   out.meals = {
     plan: (d.meals && d.meals.plan) || {},
@@ -555,21 +557,34 @@ function renderHome(v) {
    BUDGET  (ma caisse : Moi / Business — Maman a son propre onglet)
    ============================================================ */
 let budgetMonth = monthOf(todayISO());
+let budgetAccount = 'Tous';
 function renderBudget(v) {
   const m = budgetMonth;
   const isCurMonth = m === monthOf(todayISO());
-  const tx = monthTx(m).filter(isOwn).sort((a, b) => b.date.localeCompare(a.date));
-  const tot = monthTotals(m);
+  const accFilter = t => budgetAccount === 'Tous' || t.account === budgetAccount;
+  const tx = monthTx(m).filter(t => isOwn(t) && accFilter(t)).sort((a, b) => b.date.localeCompare(a.date));
+  const dep = tx.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
+  const rev = tx.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
+  const tot = { dep, rev, net: rev - dep };
+
+  // Mois précédent (même filtre de caisse) pour la comparaison
+  const pm = shiftMonth(m, -1);
+  const pmTx = monthTx(pm).filter(t => isOwn(t) && accFilter(t));
+  const pmDep = pmTx.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
+  const pmRev = pmTx.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0);
+  const pctTxt = (cur, prev) => { if (!prev) return '—'; const p = Math.round((cur - prev) / prev * 100); return (p > 0 ? '+' : '') + p + '%'; };
 
   const byCat = {};
   tx.filter(t => t.type === 'depense').forEach(t => byCat[t.cat] = (byCat[t.cat] || 0) + (+t.amount || 0));
   const cats = Object.entries(byCat).sort((a, b) => b[1] - a[1]);
   const maxCat = cats.length ? cats[0][1] : 1;
+  const limits = DB.budgetLimits || {};
 
   const byCatRev = {};
   tx.filter(t => t.type === 'revenu').forEach(t => byCatRev[t.cat] = (byCatRev[t.cat] || 0) + (+t.amount || 0));
   const catsRev = Object.entries(byCatRev).sort((a, b) => b[1] - a[1]);
   const maxCatRev = catsRev.length ? catsRev[0][1] : 1;
+  const totBar = (tot.rev + tot.dep) || 1;
 
   v.append(el(`<div>
     <h1>💰 Budget</h1>
@@ -581,11 +596,28 @@ function renderBudget(v) {
       </div>
       ${!isCurMonth ? `<div style="text-align:center;margin-top:8px"><a id="bCur" style="font-size:.82rem;color:var(--teal-d);cursor:pointer">↩ Revenir au mois courant</a></div>` : ''}
     </div>
+    <div class="seg" id="accSeg">
+      <button data-acc="Tous" class="${budgetAccount === 'Tous' ? 'active' : ''}">Toutes</button>
+      <button data-acc="Moi" class="${budgetAccount === 'Moi' ? 'active' : ''}">Moi</button>
+      <button data-acc="Business" class="${budgetAccount === 'Business' ? 'active' : ''}">Business</button>
+    </div>
     <div class="grid3">
       <div class="stat"><div class="label">Entrées</div><div class="value pos">${fmtDH(tot.rev)}</div></div>
       <div class="stat"><div class="label">Sorties</div><div class="value neg">${fmtDH(tot.dep)}</div></div>
       <div class="stat"><div class="label">Net</div><div class="value ${tot.net >= 0 ? 'pos' : 'neg'}">${fmtDH(tot.net)}</div></div>
     </div>
+
+    <div class="card">
+      <div style="display:flex;height:16px;border-radius:8px;overflow:hidden;background:var(--line)">
+        <span style="width:${tot.rev / totBar * 100}%;background:var(--green)"></span>
+        <span style="width:${tot.dep / totBar * 100}%;background:var(--red)"></span>
+      </div>
+      <div class="row between" style="margin-top:6px"><small style="color:var(--green)">🟢 Entrées ${fmtDH(tot.rev)}</small><small style="color:var(--red)">${fmtDH(tot.dep)} Sorties 🔴</small></div>
+      <div class="divider"></div>
+      <div class="row between"><small>vs ${moisLabel(pm)}</small><small>Entrées <b>${pctTxt(tot.rev, pmRev)}</b> · Dépenses <b>${pctTxt(tot.dep, pmDep)}</b></small></div>
+    </div>
+
+    ${tot.net < 0 ? `<div class="hint" style="background:#fee2e2;color:#991b1b">⚠️ Mois négatif : tu dépenses plus que tu ne gagnes (${fmtDH(tot.net)}). Attention au budget.</div>` : ''}
 
     <div class="section-title">💸 Qui me doit de l'argent (impayés)</div>
     <div class="card">
@@ -617,13 +649,20 @@ function renderBudget(v) {
     <div class="section-title">Dépenses par catégorie (ce mois)</div>
     <div class="card">
       <div class="row between" style="margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line)"><b>Total dépenses</b><b class="amt neg" style="font-size:1.05rem">${fmtDH(tot.dep)}</b></div>
-      ${cats.length ? cats.map(([c, n]) => `<div class="catrow" data-catrow="${escape(c)}" data-cattype="depense" style="margin-bottom:10px;cursor:pointer"><div class="row between"><span>${escape(c)} <small>›</small></span><b class="neg">${fmtDH(n)}</b></div><div class="bar"><span style="width:${n / maxCat * 100}%;background:var(--red)"></span></div></div>`).join('') : '<div class="empty">Aucune dépense ce mois. Ajoute-en avec le bouton +.</div>'}
-      ${cats.length ? '<small>Touche une catégorie pour voir le détail (ex : viande, lait…) et repérer le gaspillage.</small>' : ''}
+      ${cats.length ? cats.map(([c, n]) => {
+    const lim = +limits[c] || 0; const over = lim && n > lim; const near = lim && !over && n >= lim * 0.8;
+    return `<div class="catrow" data-catrow="${escape(c)}" data-cattype="depense" style="margin-bottom:10px;cursor:pointer"><div class="row between"><span>${escape(c)} <small>›</small>${lim ? ` <span class="chip ${over ? 'red' : near ? '' : 'gray'}">${over ? '⚠️ dépassé' : '/ ' + fmtDH(lim)}</span>` : ''}</span><b class="neg">${fmtDH(n)}</b></div><div class="bar"><span style="width:${Math.min(100, lim ? n / lim * 100 : n / maxCat * 100)}%;background:var(--red)"></span></div></div>`;
+  }).join('') : '<div class="empty">Aucune dépense ce mois. Ajoute-en avec le bouton +.</div>'}
+      <button class="btn ghost sm" id="limitsBtn" style="margin-top:8px">🎯 Fixer des limites par catégorie</button>
     </div>
 
     <div class="section-title">Opérations du mois</div>
-    <div class="card" id="txList">
-      ${tx.length ? tx.map(txRow).join('') : '<div class="empty">Aucune opération. Touche le bouton + en bas à droite.</div>'}
+    <div class="card">
+      <input id="txSearch" placeholder="🔎 Rechercher (catégorie, note, caisse…)" style="width:100%;margin-bottom:10px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font-size:.9rem">
+      <div id="txList">
+        ${tx.length ? tx.map(txRow).join('') : '<div class="empty">Aucune opération. Touche le bouton + en bas à droite.</div>'}
+      </div>
+      ${tx.length ? '<button class="btn ghost sm" id="exportBtn" style="margin-top:10px">💾 Exporter ce mois (CSV)</button>' : ''}
     </div>
   </div>`));
 
@@ -631,6 +670,11 @@ function renderBudget(v) {
   $('#bPrev', v).onclick = () => { budgetMonth = shiftMonth(budgetMonth, -1); router(); };
   $('#bNext', v).onclick = () => { budgetMonth = shiftMonth(budgetMonth, 1); router(); };
   const bCur = $('#bCur', v); if (bCur) bCur.onclick = () => { budgetMonth = monthOf(todayISO()); router(); };
+  v.querySelectorAll('#accSeg button').forEach(b => b.onclick = () => { budgetAccount = b.dataset.acc; router(); });
+  const limBtn = $('#limitsBtn', v); if (limBtn) limBtn.onclick = () => budgetLimitsModal();
+  const expBtn = $('#exportBtn', v); if (expBtn) expBtn.onclick = () => exportBudgetMonth(m, tx, tot);
+  const txSearch = $('#txSearch', v);
+  if (txSearch) txSearch.oninput = () => { const q = txSearch.value.trim().toLowerCase(); $('#txList', v).querySelectorAll('[data-search]').forEach(r => { r.style.display = (!q || (r.dataset.search || '').includes(q)) ? '' : 'none'; }); };
   $('#fab', v).onclick = () => txModal();
   $('#addInc', v).onclick = () => recurModal('incomes');
   $('#addFix', v).onclick = () => recurModal('fixed');
@@ -674,29 +718,42 @@ function catDetailModal(cat, type = 'depense') {
   const m = budgetMonth;
   const list = DB.transactions.filter(t => t.type === type && t.cat === cat && monthOf(t.date) === m && isOwn(t));
   const total = list.reduce((a, t) => a + (+t.amount || 0), 0);
-  let inner;
-  if (isRev) {
-    // Entrées : chaque opération avec sa date (le "quand" est important)
-    const sorted = list.slice().sort((a, b) => b.date.localeCompare(a.date));
-    inner = sorted.length
-      ? sorted.map(t => `<div class="item"><span class="ic">💵</span><span class="grow"><div class="t">${t.note ? escape(t.note) : '(sans détail)'}</div><div class="s">📅 ${t.date}</div></span><b class="amt pos">${fmtDH(t.amount)}</b></div>`).join('')
-      : '<div class="empty">Aucune entrée ce mois dans cette catégorie.</div>';
-  } else {
-    // Dépenses : regroupées par note pour repérer le gaspillage
-    const groups = {};
-    list.forEach(t => { const k = t.note ? t.note : '(sans détail)'; groups[k] = (groups[k] || 0) + (+t.amount || 0); });
-    const rows = Object.entries(groups).sort((a, b) => b[1] - a[1]);
-    inner = rows.length
-      ? rows.map(([k, n]) => `<div class="item"><span class="ic">🧺</span><span class="grow"><div class="t">${escape(k)}</div></span><b class="amt neg">${fmtDH(n)}</b></div>`).join('')
-      : '<div class="empty">Aucune dépense ce mois dans cette catégorie.</div>';
-  }
+  // Chaque opération affichée avec sa date (entrées ET dépenses), plus récente en haut
+  const sorted = list.slice().sort((a, b) => b.date.localeCompare(a.date));
+  const inner = sorted.length
+    ? sorted.map(t => `<div class="item"><span class="ic">${isRev ? '💵' : '🧺'}</span><span class="grow"><div class="t">${t.note ? escape(t.note) : '(sans détail)'}</div><div class="s">📅 ${t.date}</div></span><b class="amt ${isRev ? 'pos' : 'neg'}">${fmtDH(t.amount)}</b></div>`).join('')
+    : `<div class="empty">Aucune ${isRev ? 'entrée' : 'dépense'} ce mois dans cette catégorie.</div>`;
   const body = `
-    <div class="hint">${isRev ? 'Tes entrées de cette catégorie ce mois, <b>avec les dates</b>.' : 'Astuce : écris le produit dans la <b>note</b> en ajoutant une dépense (ex : viande, lait, légumes). Ici tu vois où part l\'argent et tu repères le gaspillage.'}</div>
+    <div class="hint">${isRev ? 'Tes entrées de cette catégorie ce mois, <b>avec les dates</b>.' : 'Tes dépenses de cette catégorie ce mois, <b>avec les dates</b>. Écris le produit dans la note pour t\'y retrouver.'}</div>
     <div>${inner}</div>
     <div class="row between" style="margin-top:10px;font-weight:800;font-size:1.05rem"><span>Total ${escape(cat)}</span><span style="color:var(--${isRev ? 'green' : 'red'})">${fmtDH(total)}</span></div>
     <div class="modal-actions"><button class="btn" id="ok">Fermer</button></div>`;
   const bg = modal('Détail — ' + cat, body);
   $('#ok', bg).onclick = () => bg.remove();
+}
+function budgetLimitsModal() {
+  const L = DB.budgetLimits || {};
+  const body = `<p><small>Fixe une limite mensuelle par catégorie de dépense. Laisse vide = pas de limite. L'app te prévient (⚠️) quand tu approches ou dépasses.</small></p>
+    ${CATS.depense.map(c => field(c, `<input data-lim="${escape(c)}" type="number" inputmode="decimal" value="${+L[c] || ''}" placeholder="pas de limite">`)).join('')}
+    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`;
+  const bg = modal('🎯 Limites par catégorie', body);
+  $('#cancel', bg).onclick = () => bg.remove();
+  $('#ok', bg).onclick = () => {
+    const nl = {};
+    bg.querySelectorAll('[data-lim]').forEach(i => { const val = +i.value || 0; if (val > 0) nl[i.dataset.lim] = val; });
+    DB.budgetLimits = nl; save(); bg.remove(); router();
+  };
+}
+function exportBudgetMonth(month, tx, tot) {
+  const esc = s => '"' + String(s == null ? '' : s).replace(/"/g, '""') + '"';
+  const lines = ['Date,Type,Categorie,Note,Montant,Caisse'];
+  tx.slice().sort((a, b) => a.date.localeCompare(b.date)).forEach(t => {
+    lines.push([t.date, t.type === 'revenu' ? 'Entrée' : 'Dépense', esc(t.cat), esc(t.note || ''), t.amount, esc(t.account)].join(','));
+  });
+  lines.push('', esc('Total entrées') + ',,,,' + tot.rev, esc('Total dépenses') + ',,,,' + tot.dep, esc('Net') + ',,,,' + tot.net);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'budget-' + month + '.csv'; a.click();
 }
 function recurRow(f, kind) {
   return `<div class="item"><span class="ic">${kind === 'incomes' ? '💵' : '🧾'}</span>
@@ -705,7 +762,8 @@ function recurRow(f, kind) {
     <button class="btn gray sm" data-edit-recur="${f.id}" data-kind="${kind}">✎</button></div>`;
 }
 function txRow(t) {
-  return `<div class="item"><span class="ic">${t.type === 'revenu' ? '＋' : '－'}</span>
+  const s = escape(((t.cat || '') + ' ' + (t.note || '') + ' ' + (t.account || '')).toLowerCase());
+  return `<div class="item" data-search="${s}"><span class="ic">${t.type === 'revenu' ? '＋' : '－'}</span>
     <span class="grow"><div class="t">${escape(t.cat)}${t.note ? ' · ' + escape(t.note) : ''}</div>
     <div class="s">${t.date} · <span class="chip ${t.account.toLowerCase()}">${t.account}</span></div></span>
     <b class="amt ${t.type === 'revenu' ? 'pos' : 'neg'}">${t.type === 'revenu' ? '+' : '-'}${fmtDH(t.amount)}</b>
