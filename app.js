@@ -2420,23 +2420,27 @@ function renderVoiture(v) {
       ${lastVid ? `<small>Dernière vidange : ${lastVid.date}${lastVid.km ? ' à ' + (+lastVid.km).toLocaleString('fr-FR') + ' km' : ''}. Prochaine conseillée ≈ ${((+lastVid.km || 0) + 10000).toLocaleString('fr-FR')} km.</small>` : '<small>Note ta première vidange ci-dessous.</small>'}
     </div>
     <div class="row between" style="margin:6px 4px"><b>Entretiens & frais</b><button class="btn ghost sm" id="addCar">+ Entretien</button></div>
-    <div class="card" id="carList">${log.length ? log.map(e => `<div class="item"><span class="ic">🔧</span><span class="grow"><div class="t">${escape(e.type)}${e.note ? ' · ' + escape(e.note) : ''}</div><div class="s">${e.date}${e.km ? ' · ' + (+e.km).toLocaleString('fr-FR') + ' km' : ''}</div></span>${e.cost ? `<b class="amt neg">${fmtDH(e.cost)}</b>` : ''}<button class="btn gray sm" data-x="${e.id}">✕</button></div>`).join('') : '<div class="empty">Aucun entretien noté.</div>'}</div>
+    <div class="card" id="carList">${log.length ? log.map(e => `<div class="item"><span class="ic">🔧</span><span class="grow" data-e="${e.id}" style="cursor:pointer"><div class="t">${escape(e.type)}${e.note ? ' · ' + escape(e.note) : ''} <small>✎</small></div><div class="s">${e.date}${e.km ? ' · ' + (+e.km).toLocaleString('fr-FR') + ' km' : ''}</div></span>${e.cost ? `<b class="amt neg">${fmtDH(e.cost)}</b>` : ''}<button class="btn gray sm" data-x="${e.id}">✕</button></div>`).join('') : '<div class="empty">Aucun entretien noté.</div>'}</div>
     <a class="btn block gray" href="#/">← Accueil</a></div>`));
   $('#setKm', v).onclick = () => { const bg = modal('Kilométrage', field('Km actuel', `<input id="km" type="number" inputmode="numeric" value="${+DB.car.km || 0}">`) + '<div class="modal-actions"><button class="btn" id="ok">Enregistrer</button></div>'); $('#ok', bg).onclick = () => { DB.car.km = +$('#km', bg).value || 0; save(); bg.remove(); router(); }; };
-  v.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { DB.car.log = DB.car.log.filter(e => e.id !== b.dataset.x); save(); router(); });
+  v.querySelectorAll('[data-e]').forEach(b => b.onclick = () => carModal(b.dataset.e));
+  v.querySelectorAll('[data-x]').forEach(b => b.onclick = () => { if (confirm('Supprimer cet entretien ?')) { DB.car.log = DB.car.log.filter(e => e.id !== b.dataset.x); save(); router(); } });
   $('#addCar', v).onclick = () => carModal();
 }
-function carModal() {
+function carModal(id) {
+  const cur = id ? DB.car.log.find(e => e.id === id) : null;
+  if (id && !cur) return;
   const types = ['Vidange', 'Filtres', 'Pneus', 'Freins', 'Assurance', 'Visite technique', 'Vignette', 'Réparation', 'Carburant', 'Autre'];
-  const bg = modal('Entretien / frais voiture', `
-    ${field('Type', `<select id="c_t">${options(types)}</select>`)}
-    ${field('Date', `<input id="c_d" type="date" value="${todayISO()}">`)}
-    ${field('Km (optionnel)', '<input id="c_k" type="number" inputmode="numeric">')}
-    ${field('Coût (DH)', '<input id="c_c" type="number" inputmode="decimal">')}
-    ${field('Note', '<input id="c_n" placeholder="ex: garage, huile 10W40">')}
-    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
-  $('#cancel', bg).onclick = () => bg.remove();
-  $('#ok', bg).onclick = () => { const km = +$('#c_k', bg).value || 0; DB.car.log.push({ id: uid(), type: $('#c_t', bg).value, date: $('#c_d', bg).value, km, cost: +$('#c_c', bg).value || 0, note: $('#c_n', bg).value.trim() }); if (km) DB.car.km = Math.max(+DB.car.km || 0, km); save(); bg.remove(); router(); };
+  const bg = modal(id ? 'Modifier l\'entretien' : 'Entretien / frais voiture', `
+    ${field('Type', `<select id="c_t">${options(types, cur ? cur.type : '')}</select>`)}
+    ${field('Date', `<input id="c_d" type="date" value="${cur ? cur.date : todayISO()}">`)}
+    ${field('Km (optionnel)', `<input id="c_k" type="number" inputmode="numeric" value="${cur ? (cur.km || '') : ''}">`)}
+    ${field('Coût (DH)', `<input id="c_c" type="number" inputmode="decimal" value="${cur ? (cur.cost || '') : ''}">`)}
+    ${field('Note', `<input id="c_n" placeholder="ex: garage, huile 10W40" value="${cur ? escape(cur.note || '') : ''}">`)}
+    <div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">Enregistrer</button></div>`);
+  const cancel = $('#cancel', bg); if (cancel) cancel.onclick = () => bg.remove();
+  const del = $('#del', bg); if (del) del.onclick = () => { if (confirm('Supprimer cet entretien ?')) { DB.car.log = DB.car.log.filter(e => e.id !== id); save(); bg.remove(); router(); } };
+  $('#ok', bg).onclick = () => { const km = +$('#c_k', bg).value || 0; const o = { type: $('#c_t', bg).value, date: $('#c_d', bg).value, km, cost: +$('#c_c', bg).value || 0, note: $('#c_n', bg).value.trim() }; if (id) Object.assign(cur, o); else DB.car.log.push(Object.assign({ id: uid() }, o)); if (km) DB.car.km = Math.max(+DB.car.km || 0, km); save(); bg.remove(); router(); };
 }
 
 /* ============================================================
@@ -2613,25 +2617,29 @@ function renderPrets(v) {
   if (!list.length) ll.append(el('<small>Rien. Ajoute un objet ou de l\'argent prêté/emprunté.</small>'));
   list.forEach(l => {
     const dir = l.type === 'prete' ? '➡️ Prêté à' : '⬅️ Emprunté de';
-    const row = el(`<div class="item"><span class="check ${l.returned ? 'on' : ''}">${l.returned ? '✓' : ''}</span><span class="grow"><div class="t" style="${l.returned ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(l.what)}${l.amount ? ' · ' + fmtDH(l.amount) : ''}</div><div class="s">${dir} ${escape(l.who)} · ${l.date}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
+    const row = el(`<div class="item"><span class="check ${l.returned ? 'on' : ''}">${l.returned ? '✓' : ''}</span><span class="grow" data-e style="cursor:pointer"><div class="t" style="${l.returned ? 'text-decoration:line-through;color:#94a3b8' : ''}">${escape(l.what)}${l.amount ? ' · ' + fmtDH(l.amount) : ''} <small>✎</small></div><div class="s">${dir} ${escape(l.who)} · ${l.date}</div></span><button class="btn gray sm" data-x>✕</button></div>`);
     $('.check', row).onclick = () => { l.returned = !l.returned; save(); router(); };
-    $('[data-x]', row).onclick = () => { DB.loans = DB.loans.filter(x => x.id !== l.id); save(); router(); };
+    $('[data-e]', row).onclick = () => loanModal(l.id);
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer ?')) { DB.loans = DB.loans.filter(x => x.id !== l.id); save(); router(); } };
     ll.append(row);
   });
   $('#addL', v).onclick = () => loanModal();
 }
-function loanModal() {
-  let type = 'prete';
-  const bg = modal('Prêt / emprunt', `
-    <div class="seg" id="lt"><button data-t="prete" class="active">➡️ J'ai prêté</button><button data-t="emprunte">⬅️ J'ai emprunté</button></div>
-    ${field('Quoi ? (objet ou raison)', '<input id="l_w" placeholder="ex: perceuse, dépannage…" autofocus>')}
-    ${field('Montant (DH) — si c\'est de l\'argent', '<input id="l_a" type="number" inputmode="decimal">')}
-    ${field('Qui ?', '<input id="l_who" placeholder="ex: voisin Ahmed">')}
-    ${field('Date', `<input id="l_d" type="date" value="${todayISO()}">`)}
-    <div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>`);
+function loanModal(id) {
+  const cur = id ? DB.loans.find(l => l.id === id) : null;
+  if (id && !cur) return;
+  let type = cur ? cur.type : 'prete';
+  const bg = modal(id ? 'Modifier le prêt / emprunt' : 'Prêt / emprunt', `
+    <div class="seg" id="lt"><button data-t="prete" class="${type === 'prete' ? 'active' : ''}">➡️ J'ai prêté</button><button data-t="emprunte" class="${type === 'emprunte' ? 'active' : ''}">⬅️ J'ai emprunté</button></div>
+    ${field('Quoi ? (objet ou raison)', `<input id="l_w" value="${cur ? escape(cur.what) : ''}" placeholder="ex: perceuse, dépannage…" autofocus>`)}
+    ${field('Montant (DH) — si c\'est de l\'argent', `<input id="l_a" type="number" inputmode="decimal" value="${cur ? (cur.amount || '') : ''}">`)}
+    ${field('Qui ?', `<input id="l_who" value="${cur ? escape(cur.who || '') : ''}" placeholder="ex: voisin Ahmed">`)}
+    ${field('Date', `<input id="l_d" type="date" value="${cur ? cur.date : todayISO()}">`)}
+    <div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">Enregistrer</button></div>`);
   bg.querySelectorAll('#lt button').forEach(b => b.onclick = () => { bg.querySelectorAll('#lt button').forEach(x => x.classList.remove('active')); b.classList.add('active'); type = b.dataset.t; });
-  $('#cancel', bg).onclick = () => bg.remove();
-  $('#ok', bg).onclick = () => { const w = $('#l_w', bg).value.trim(); if (!w) return; DB.loans.push({ id: uid(), type, what: w, amount: +$('#l_a', bg).value || 0, who: $('#l_who', bg).value.trim(), date: $('#l_d', bg).value, returned: false }); save(); bg.remove(); router(); };
+  const cancel = $('#cancel', bg); if (cancel) cancel.onclick = () => bg.remove();
+  const del = $('#del', bg); if (del) del.onclick = () => { if (confirm('Supprimer ?')) { DB.loans = DB.loans.filter(x => x.id !== id); save(); bg.remove(); router(); } };
+  $('#ok', bg).onclick = () => { const w = $('#l_w', bg).value.trim(); if (!w) return; const o = { type, what: w, amount: +$('#l_a', bg).value || 0, who: $('#l_who', bg).value.trim(), date: $('#l_d', bg).value }; if (id) Object.assign(cur, o); else DB.loans.push(Object.assign({ id: uid(), returned: false }, o)); save(); bg.remove(); router(); };
 }
 
 /* ============================================================
@@ -2647,9 +2655,9 @@ function renderContacts(v) {
   const cl = $('#contactList', v);
   if (!list.length) cl.append(el('<small>Aucun contact.</small>'));
   list.forEach(c => {
-    const card = el(`<div class="card"><div class="row between"><span class="grow"><div class="t" style="font-weight:700">${escape(c.name)}</div><div class="s">${escape(c.role || '')}${c.phone ? ' · ' + escape(c.phone) : ''}</div></span><span style="display:flex;gap:6px;align-items:center">${c.phone ? `<a class="btn sm" href="tel:${escape(c.phone)}">📞</a>` : ''}<button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></span></div></div>`);
+    const card = el(`<div class="card"><div class="row between"><span class="grow" data-e style="cursor:pointer"><div class="t" style="font-weight:700">${escape(c.name)} <small>✎</small></div><div class="s">${escape(c.role || '')}${c.phone ? ' · ' + escape(c.phone) : ''}</div></span><span style="display:flex;gap:6px;align-items:center">${c.phone ? `<a class="btn sm" href="tel:${escape(c.phone)}">📞</a>` : ''}<button class="btn gray sm" data-x>✕</button></span></div></div>`);
     $('[data-e]', card).onclick = () => contactModal(c.id);
-    $('[data-x]', card).onclick = () => { DB.contacts = DB.contacts.filter(x => x.id !== c.id); save(); router(); };
+    $('[data-x]', card).onclick = () => { if (confirm('Supprimer ce contact ?')) { DB.contacts = DB.contacts.filter(x => x.id !== c.id); save(); router(); } };
     cl.append(card);
   });
   $('#addC', v).onclick = () => contactModal();
@@ -2687,10 +2695,10 @@ function renderGaranties(v) {
     const dl = daysUntil(w.end);
     const cls = dl < 0 ? 'gray' : dl <= 30 ? 'red' : dl <= 90 ? '' : 'green';
     const lab = dl < 0 ? 'expirée' : 'fin dans ' + dl + ' j';
-    const row = el(`<div class="item"><span class="ic">🧾</span><span class="grow"><div class="t">${escape(w.item)}${w.amount ? ' · ' + fmtDH(w.amount) : ''}</div><div class="s">Acheté ${w.date} · ${w.months} mois → <b>${w.end}</b>${w.note ? ' · ' + escape(w.note) : ''}</div></span><span class="chip ${cls}">${lab}</span><button class="btn gray sm" data-cal>📅</button><button class="btn gray sm" data-e>✎</button><button class="btn gray sm" data-x>✕</button></div>`);
+    const row = el(`<div class="item"><span class="ic">🧾</span><span class="grow" data-e style="cursor:pointer"><div class="t">${escape(w.item)}${w.amount ? ' · ' + fmtDH(w.amount) : ''} <small>✎</small></div><div class="s">Acheté ${w.date} · ${w.months} mois → <b>${w.end}</b>${w.note ? ' · ' + escape(w.note) : ''}</div></span><span class="chip ${cls}">${lab}</span><button class="btn gray sm" data-cal>📅</button><button class="btn gray sm" data-x>✕</button></div>`);
     $('[data-cal]', row).onclick = () => exportWarrantyICS(w);
     $('[data-e]', row).onclick = () => warrantyModal(w.id);
-    $('[data-x]', row).onclick = () => { DB.warranties = DB.warranties.filter(x => x.id !== w.id); save(); router(); };
+    $('[data-x]', row).onclick = () => { if (confirm('Supprimer cette garantie ?')) { DB.warranties = DB.warranties.filter(x => x.id !== w.id); save(); router(); } };
     wl.append(row);
   });
   $('#addW', v).onclick = () => warrantyModal();
@@ -2730,7 +2738,24 @@ function renderJournal(v) {
   $('#jSave', v).onclick = () => { const text = $('#j_t', v).value.trim(); let e = DB.journal.find(j => j.date === todayISO()); if (e) { e.text = text; e.mood = mood; } else DB.journal.push({ id: uid(), date: todayISO(), mood, text }); save(); router(); };
   const jl = $('#jList', v);
   if (!list.length) jl.append(el('<small>Aucune note encore.</small>'));
-  list.forEach(j => { const card = el(`<div class="card"><div class="row between"><b>${j.mood || '📝'} ${j.date}</b><button class="btn gray sm" data-x>✕</button></div>${j.text ? `<div style="margin-top:6px;white-space:pre-wrap">${escape(j.text)}</div>` : ''}</div>`); $('[data-x]', card).onclick = () => { DB.journal = DB.journal.filter(x => x.id !== j.id); save(); router(); }; jl.append(card); });
+  list.forEach(j => {
+    const card = el(`<div class="card"><div class="row between"><b data-e style="cursor:pointer">${j.mood || '📝'} ${j.date} <small>✎</small></b><button class="btn gray sm" data-x>✕</button></div>${j.text ? `<div data-e style="margin-top:6px;white-space:pre-wrap;cursor:pointer">${escape(j.text)}</div>` : ''}</div>`);
+    card.querySelectorAll('[data-e]').forEach(elm => elm.onclick = () => journalEditModal(j.id));
+    $('[data-x]', card).onclick = () => { if (confirm('Supprimer cette note ?')) { DB.journal = DB.journal.filter(x => x.id !== j.id); save(); router(); } };
+    jl.append(card);
+  });
+}
+function journalEditModal(id) {
+  const cur = DB.journal.find(j => j.id === id); if (!cur) return;
+  const moods = ['😀', '🙂', '😐', '😟', '😢', '😡'];
+  const bg = modal('Modifier la note — ' + cur.date, `
+    ${field('Humeur', `<div class="row" style="gap:6px;flex-wrap:wrap" id="jm">${moods.map(m => `<button type="button" class="btn ghost" data-m="${m}" style="font-size:1.3rem;padding:6px 12px;${cur.mood === m ? 'background:var(--teal-l);' : ''}">${m}</button>`).join('')}</div>`)}
+    ${field('Texte', `<textarea id="je_t" style="min-height:90px">${escape(cur.text || '')}</textarea>`)}
+    <div class="modal-actions"><button class="btn danger" id="del">Supprimer</button><button class="btn" id="ok">Enregistrer</button></div>`);
+  let mood = cur.mood || '';
+  bg.querySelectorAll('#jm [data-m]').forEach(b => b.onclick = () => { mood = b.dataset.m; bg.querySelectorAll('#jm [data-m]').forEach(x => x.style.background = ''); b.style.background = 'var(--teal-l)'; });
+  $('#del', bg).onclick = () => { if (confirm('Supprimer cette note ?')) { DB.journal = DB.journal.filter(x => x.id !== id); save(); bg.remove(); router(); } };
+  $('#ok', bg).onclick = () => { cur.text = $('#je_t', bg).value.trim(); cur.mood = mood; save(); bg.remove(); router(); };
 }
 
 /* ============================================================
@@ -2751,15 +2776,19 @@ function renderSante(v) {
     <a class="btn block gray" href="#/">← Accueil</a></div>`));
   const hl = $('#hList', v);
   if (!logs.length) hl.append(el('<small>Aucune mesure. Ajoute ton poids, ta tension…</small>'));
-  logs.slice(0, 40).forEach(l => { const txt = l.type === 'poids' ? l.v1 + ' kg' : l.type === 'tension' ? l.v1 + '/' + l.v2 + ' mmHg' : l.v1 + ' pas'; const row = el(`<div class="item"><span class="ic">${l.type === 'poids' ? '⚖️' : l.type === 'tension' ? '🩺' : '👟'}</span><span class="grow"><div class="t">${txt}</div><div class="s">${l.date}</div></span><button class="btn gray sm" data-x>✕</button></div>`); $('[data-x]', row).onclick = () => { DB.health.logs = DB.health.logs.filter(x => x.id !== l.id); save(); router(); }; hl.append(row); });
+  logs.slice(0, 40).forEach(l => { const txt = l.type === 'poids' ? l.v1 + ' kg' : l.type === 'tension' ? l.v1 + '/' + l.v2 + ' mmHg' : l.v1 + ' pas'; const row = el(`<div class="item"><span class="ic">${l.type === 'poids' ? '⚖️' : l.type === 'tension' ? '🩺' : '👟'}</span><span class="grow" data-e style="cursor:pointer"><div class="t">${txt} <small>✎</small></div><div class="s">${l.date}</div></span><button class="btn gray sm" data-x>✕</button></div>`); $('[data-e]', row).onclick = () => healthModal(l.type, l.id); $('[data-x]', row).onclick = () => { if (confirm('Supprimer cette mesure ?')) { DB.health.logs = DB.health.logs.filter(x => x.id !== l.id); save(); router(); } }; hl.append(row); });
   v.querySelectorAll('[data-add]').forEach(b => b.onclick = () => healthModal(b.dataset.add));
 }
-function healthModal(type) {
+function healthModal(type, id) {
+  const cur = id ? DB.health.logs.find(l => l.id === id) : null;
+  if (id && !cur) return;
+  if (cur) type = cur.type;
   const labels = { poids: 'Poids (kg)', tension: 'Tension', pas: 'Nombre de pas' };
-  const fields = type === 'tension' ? field('Systolique (ex: 12)', '<input id="h1" type="number" inputmode="decimal" autofocus>') + field('Diastolique (ex: 8)', '<input id="h2" type="number" inputmode="decimal">') : field(labels[type], `<input id="h1" type="number" inputmode="decimal" autofocus>`);
-  const bg = modal('Ajouter — ' + labels[type], fields + field('Date', `<input id="hd" type="date" value="${todayISO()}">`) + '<div class="modal-actions"><button class="btn gray" id="cancel">Annuler</button><button class="btn" id="ok">Enregistrer</button></div>');
-  $('#cancel', bg).onclick = () => bg.remove();
-  $('#ok', bg).onclick = () => { const v1 = +$('#h1', bg).value || 0; if (!v1) return; DB.health.logs.push({ id: uid(), type, date: $('#hd', bg).value, v1, v2: type === 'tension' ? (+$('#h2', bg).value || 0) : 0 }); save(); bg.remove(); router(); };
+  const fields = type === 'tension' ? field('Systolique (ex: 12)', `<input id="h1" type="number" inputmode="decimal" value="${cur ? cur.v1 : ''}" autofocus>`) + field('Diastolique (ex: 8)', `<input id="h2" type="number" inputmode="decimal" value="${cur ? (cur.v2 || '') : ''}">`) : field(labels[type], `<input id="h1" type="number" inputmode="decimal" value="${cur ? cur.v1 : ''}" autofocus>`);
+  const bg = modal((id ? 'Modifier — ' : 'Ajouter — ') + labels[type], fields + field('Date', `<input id="hd" type="date" value="${cur ? cur.date : todayISO()}">`) + `<div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">Enregistrer</button></div>`);
+  const cancel = $('#cancel', bg); if (cancel) cancel.onclick = () => bg.remove();
+  const del = $('#del', bg); if (del) del.onclick = () => { if (confirm('Supprimer cette mesure ?')) { DB.health.logs = DB.health.logs.filter(x => x.id !== id); save(); bg.remove(); router(); } };
+  $('#ok', bg).onclick = () => { const v1 = +$('#h1', bg).value || 0; if (!v1) return; const o = { type, date: $('#hd', bg).value, v1, v2: type === 'tension' ? (+$('#h2', bg).value || 0) : 0 }; if (id) Object.assign(cur, o); else DB.health.logs.push(Object.assign({ id: uid() }, o)); save(); bg.remove(); router(); };
 }
 
 /* ============================================================
