@@ -155,6 +155,12 @@ function migrate(d) {
   out.savings = Object.assign({}, s.savings, d.savings || {});
   if (!Array.isArray(out.savings.log)) out.savings.log = [];
   out.debts = Array.isArray(d.debts) ? d.debts : s.debts;
+  out.transactions = Array.isArray(d.transactions) ? d.transactions : [];
+  out.incomes = Array.isArray(d.incomes) ? d.incomes : s.incomes;
+  out.fixed = Array.isArray(d.fixed) ? d.fixed : s.fixed;
+  out.tasks = Array.isArray(d.tasks) ? d.tasks : [];
+  out.kids = Array.isArray(d.kids) ? d.kids : s.kids;
+  out.projects = Array.isArray(d.projects) ? d.projects : [];
   out.budgetLimits = (d.budgetLimits && typeof d.budgetLimits === 'object' && !Array.isArray(d.budgetLimits)) ? d.budgetLimits : {};
   out.echeances = Array.isArray(d.echeances) ? d.echeances : s.echeances;
   out.meals = {
@@ -174,6 +180,8 @@ function migrate(d) {
   out.prayer = Object.assign({}, s.prayer, d.prayer || {});
   out.prayer.adjust = Object.assign({}, s.prayer.adjust, (d.prayer && d.prayer.adjust) || {});
   out.mother = Object.assign({}, s.mother, d.mother || {});
+  out.mother.meds = Array.isArray(out.mother.meds) ? out.mother.meds : [];
+  out.mother.cnss = Array.isArray(out.mother.cnss) ? out.mother.cnss : s.mother.cnss;
   out.mother.rent = Object.assign({ monthly: 0, arrears: 0, months: [] }, out.mother.rent || {});
   if (!Array.isArray(out.mother.rent.months)) out.mother.rent.months = [];
   // Migration unique vers le suivi mensuel (ledger) : on récupère les anciens revenus/charges
@@ -192,8 +200,11 @@ function migrate(d) {
   out.journal = Array.isArray(d.journal) ? d.journal : s.journal;
   out.health = { logs: (d.health && Array.isArray(d.health.logs)) ? d.health.logs : [] };
   out.spiritual = Object.assign({}, s.spiritual, d.spiritual || {});
-  out.spiritual.fasting = out.spiritual.fasting || {};
-  out.spiritual.dhikr = out.spiritual.dhikr || {};
+  out.spiritual.prayers = (out.spiritual.prayers && typeof out.spiritual.prayers === 'object') ? out.spiritual.prayers : {};
+  out.spiritual.quran = Array.isArray(out.spiritual.quran) ? out.spiritual.quran : [];
+  out.spiritual.sadaqa = Array.isArray(out.spiritual.sadaqa) ? out.spiritual.sadaqa : [];
+  out.spiritual.fasting = (out.spiritual.fasting && typeof out.spiritual.fasting === 'object') ? out.spiritual.fasting : {};
+  out.spiritual.dhikr = (out.spiritual.dhikr && typeof out.spiritual.dhikr === 'object') ? out.spiritual.dhikr : {};
   const df = d.farm || {};
   out.farm = {
     opening: Object.assign({}, s.farm.opening, df.opening || {}),
@@ -203,6 +214,7 @@ function migrate(d) {
     agenda: Array.isArray(df.agenda) ? df.agenda : s.farm.agenda,
     tx: Array.isArray(df.tx) ? df.tx : s.farm.tx,
   };
+  if (!Array.isArray(out.farm.sheep.log)) out.farm.sheep.log = [];
   const dg = d.garage || {};
   out.garage = {
     budget: +dg.budget || 0,
@@ -731,7 +743,8 @@ function debtModal(id, defSource) {
 function catDetailModal(cat, type = 'depense') {
   const isRev = type === 'revenu';
   const m = budgetMonth;
-  const list = DB.transactions.filter(t => t.type === type && t.cat === cat && monthOf(t.date) === m && isOwn(t));
+  const accOk = t => budgetAccount === 'Tous' || t.account === budgetAccount;
+  const list = DB.transactions.filter(t => t.type === type && t.cat === cat && monthOf(t.date) === m && isOwn(t) && accOk(t));
   const total = list.reduce((a, t) => a + (+t.amount || 0), 0);
   // Chaque opération affichée avec sa date (entrées ET dépenses), plus récente en haut
   const sorted = list.slice().sort((a, b) => b.date.localeCompare(a.date));
