@@ -17,6 +17,7 @@ const escape = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '
 const PRAYERS = ['Fajr', 'Dohr', 'Asr', 'Maghrib', 'Icha'];
 const ACCOUNTS = ['Moi', 'Maman', 'Business'];
 const OWN_ACCOUNTS = ['Moi', 'Business']; // caisse Maman exclue du Budget (onglet dédié)
+const DEBT_SOURCES = ['Moi', 'Dinoun']; // caisses d'impayés séparées (mes clients / fournisseur Dinoun)
 const CATS = {
   depense: ['Nourriture', 'Loyer', 'Assurance', 'Carburant', 'Voiture', 'Enfants', 'Santé', 'Médicaments', 'Factures', 'Sadaqa', 'Marchandise', 'Autre'],
   revenu: ['Filtres', 'Loyer garage', 'Salaire', 'Vente', 'Autre'],
@@ -620,11 +621,10 @@ function renderBudget(v) {
 
     ${tot.net < 0 ? `<div class="hint" style="background:#fee2e2;color:#991b1b">⚠️ Mois négatif : tu dépenses plus que tu ne gagnes (${fmtDH(tot.net)}). Attention au budget.</div>` : ''}
 
-    <div class="section-title">💸 Qui me doit de l'argent (impayés)</div>
+    <div class="section-title">💸 Impayés — qui me doit de l'argent</div>
     <div class="card">
-      <div class="row between"><span><b>Total à récupérer</b></span><b class="amt pos">${fmtDH(debtsTotal())}</b></div>
-      <div id="debtList" style="margin-top:6px"></div>
-      <button class="btn ghost sm" id="addDebt" style="margin-top:8px">+ Ajouter un impayé</button>
+      <div class="row between"><span><b>Total à récupérer (toutes caisses)</b></span><b class="amt pos">${fmtDH(debtsTotal())}</b></div>
+      <div id="debtGroups" style="margin-top:8px"></div>
     </div>
 
     <div class="section-title">Charges fixes & revenus récurrents</div>
@@ -684,33 +684,46 @@ function renderBudget(v) {
   v.querySelectorAll('[data-edit-recur]').forEach(b => b.onclick = () => recurModal(b.dataset.kind, b.dataset.editRecur));
   v.querySelectorAll('[data-catrow]').forEach(r => r.onclick = () => catDetailModal(r.dataset.catrow, r.dataset.cattype || 'depense'));
 
-  // Impayés
-  const dl = $('#debtList', v);
-  const unpaid = DB.debts.filter(d => !d.paid).sort((a, b) => (b.amount || 0) - (a.amount || 0));
-  if (!unpaid.length) dl.append(el('<small>Personne ne te doit d\'argent. 👍</small>'));
-  unpaid.forEach(d => {
-    const row = el(`<div class="item"><span class="ic">💸</span>
-      <span class="grow" data-edit style="cursor:pointer"><div class="t">${escape(d.name)} <small>✎</small></div><div class="s">${d.date}${d.note ? ' · ' + escape(d.note) : ''}</div></span>
-      <b class="amt pos">${fmtDH(d.amount)}</b>
-      <button class="btn sm" data-paid title="Marquer payé">✓</button>
-      <button class="btn gray sm" data-x>✕</button></div>`);
-    $('[data-edit]', row).onclick = () => debtModal(d.id);
-    $('[data-paid]', row).onclick = () => { if (confirm(d.name + ' t\'a payé ' + fmtDH(d.amount) + ' ?')) { d.paid = true; save(); router(); } };
-    $('[data-x]', row).onclick = () => { if (confirm('Supprimer cet impayé ?')) { DB.debts = DB.debts.filter(x => x !== d); save(); router(); } };
-    dl.append(row);
+  // Impayés — 2 caisses séparées (Moi + Dinoun), + toute caisse ajoutée
+  const dg = $('#debtGroups', v);
+  const unpaid = DB.debts.filter(d => !d.paid);
+  const srcLabel = (s) => s === 'Moi' ? '🙂 Ma caisse (mes clients)' : s === 'Dinoun' ? '📦 Dinoun (fournisseur)' : '📦 ' + s;
+  const sources = [...new Set([...DEBT_SOURCES, ...DB.debts.map(d => d.source || 'Moi')])];
+  sources.forEach(src => {
+    const items = unpaid.filter(d => (d.source || 'Moi') === src).sort((a, b) => (b.amount || 0) - (a.amount || 0));
+    const subtotal = items.reduce((a, d) => a + (+d.amount || 0), 0);
+    const block = el(`<div style="margin-bottom:14px">
+      <div class="row between" style="padding:6px 0;border-bottom:2px solid var(--line)"><b>${escape(srcLabel(src))}</b><b class="amt pos">${fmtDH(subtotal)}</b></div>
+      <div class="dlist" style="margin-top:6px"></div>
+      <button class="btn ghost sm" data-add-src="${escape(src)}" style="margin-top:6px">+ Ajouter dans cette caisse</button>
+    </div>`);
+    const dl = $('.dlist', block);
+    if (!items.length) dl.append(el('<small>Personne ne doit dans cette caisse. 👍</small>'));
+    items.forEach(d => {
+      const row = el(`<div class="item"><span class="ic">💸</span>
+        <span class="grow" data-edit style="cursor:pointer"><div class="t">${escape(d.name)} <small>✎</small></div><div class="s">${d.date}${d.note ? ' · ' + escape(d.note) : ''}</div></span>
+        <b class="amt pos">${fmtDH(d.amount)}</b>
+        <button class="btn sm" data-paid title="Marquer payé">✓</button>
+        <button class="btn gray sm" data-x>✕</button></div>`);
+      $('[data-edit]', row).onclick = () => debtModal(d.id);
+      $('[data-paid]', row).onclick = () => { if (confirm(d.name + ' t\'a payé ' + fmtDH(d.amount) + ' ?')) { d.paid = true; save(); router(); } };
+      $('[data-x]', row).onclick = () => { if (confirm('Supprimer cet impayé ?')) { DB.debts = DB.debts.filter(x => x !== d); save(); router(); } };
+      dl.append(row);
+    });
+    $('[data-add-src]', block).onclick = () => debtModal(null, src);
+    dg.append(block);
   });
-  $('#addDebt', v).onclick = () => debtModal();
 }
-function debtModal(id) {
-  const cur = id ? DB.debts.find(x => x.id === id) : { name: '', amount: 0, date: todayISO(), note: '' };
+function debtModal(id, defSource) {
+  const cur = id ? DB.debts.find(x => x.id === id) : { name: '', amount: 0, date: todayISO(), note: '', source: defSource || 'Moi' };
   if (id && !cur) return;
-  const body = `${field('Nom (garage / station / client)', `<input id="d_n" autofocus placeholder="ex: Garage Sidi Kacem" value="${escape(cur.name || '')}">`)}${field('Montant (DH)', `<input id="d_a" type="number" inputmode="decimal" value="${cur.amount || ''}">`)}${field('Date', `<input id="d_d" type="date" value="${cur.date || todayISO()}">`)}${field('Note', `<input id="d_note" placeholder="ex: filtres livrés" value="${escape(cur.note || '')}">`)}<div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">${id ? 'Enregistrer' : 'Ajouter'}</button></div>`;
+  const body = `${field('Caisse / source', `<input id="d_src" value="${escape(cur.source || 'Moi')}" list="dsrc" placeholder="ex: Moi, Dinoun">`)}<datalist id="dsrc">${DEBT_SOURCES.map(s => `<option value="${escape(s)}">`).join('')}</datalist>${field('Nom (garage / station / client)', `<input id="d_n" placeholder="ex: Garage Sidi Kacem" value="${escape(cur.name || '')}">`)}${field('Montant (DH)', `<input id="d_a" type="number" inputmode="decimal" value="${cur.amount || ''}">`)}${field('Date', `<input id="d_d" type="date" value="${cur.date || todayISO()}">`)}${field('Note', `<input id="d_note" placeholder="ex: filtres livrés" value="${escape(cur.note || '')}">`)}<div class="modal-actions">${id ? '<button class="btn danger" id="del">Supprimer</button>' : '<button class="btn gray" id="cancel">Annuler</button>'}<button class="btn" id="ok">${id ? 'Enregistrer' : 'Ajouter'}</button></div>`;
   const bg = modal(id ? 'Modifier l\'impayé' : 'Impayé — qui me doit', body);
   const cancel = $('#cancel', bg); if (cancel) cancel.onclick = () => bg.remove();
   const del = $('#del', bg); if (del) del.onclick = () => { if (confirm('Supprimer cet impayé ?')) { DB.debts = DB.debts.filter(x => x.id !== id); save(); bg.remove(); router(); } };
   $('#ok', bg).onclick = () => {
     const n = $('#d_n', bg).value.trim(); const a = +$('#d_a', bg).value; if (!n || !a) return;
-    const o = { name: n, amount: a, date: $('#d_d', bg).value, note: $('#d_note', bg).value.trim() };
+    const o = { name: n, amount: a, date: $('#d_d', bg).value, note: $('#d_note', bg).value.trim(), source: $('#d_src', bg).value.trim() || 'Moi' };
     if (id) Object.assign(cur, o); else DB.debts.push(Object.assign({ id: uid(), paid: false }, o));
     save(); bg.remove(); router();
   };
