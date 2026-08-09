@@ -1199,7 +1199,7 @@ function rentMonthModal(id) {
   $('#cancel', bg).onclick = () => bg.remove();
   $('#ok', bg).onclick = () => { const o = { month: $('#rm_m', bg).value || monthOf(todayISO()), expected: +$('#rm_e', bg).value || 0, received: +$('#rm_r', bg).value || 0, note: $('#rm_n', bg).value.trim() }; if (id) Object.assign(cur, o); else r.months.push(Object.assign({ id: uid() }, o)); save(); bg.remove(); router(); };
 }
-function shiftMonth(ym, delta) { const [y, m] = ym.split('-').map(Number); return new Date(y, m - 1 + delta, 1).toISOString().slice(0, 7); }
+function shiftMonth(ym, delta) { const [y, m] = ym.split('-').map(Number); const t = y * 12 + (m - 1) + delta; const ny = Math.floor(t / 12); const nm = t - ny * 12 + 1; return ny + '-' + String(nm).padStart(2, '0'); }
 function mamanLedgerNet() { let net = 0; const L = DB.mother.ledger || {}; Object.values(L).forEach(arr => arr.forEach(x => { net += x.type === 'revenu' ? (+x.amount || 0) : -(+x.amount || 0); })); return net; }
 let mamanMonth = monthOf(todayISO());
 function renderMaman(v) {
