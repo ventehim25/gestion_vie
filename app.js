@@ -8,7 +8,8 @@ const KEY = 'gestion_vie_v1';
 const $ = (s, r = document) => r.querySelector(s);
 const el = (h) => { const t = document.createElement('template'); t.innerHTML = h.trim(); return t.content.firstElementChild; };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-const todayISO = () => new Date().toISOString().slice(0, 10);
+const localISO = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const todayISO = () => localISO(new Date());
 const monthOf = (iso) => iso.slice(0, 7);
 const fmtDH = (n) => (Math.round(n) || 0).toLocaleString('fr-FR') + ' DH';
 const escape = (s) => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -177,7 +178,7 @@ function migrate(d) {
   // Migration unique vers le suivi mensuel (ledger) : on récupère les anciens revenus/charges
   // récurrents Maman + les mouvements du carnet, regroupés par mois.
   if (out.mother.ledger === undefined || out.mother.ledger === null) {
-    const cm = new Date().toISOString().slice(0, 7);
+    const cm = todayISO().slice(0, 7);
     const L = {};
     (out.incomes || []).filter(x => x.account === 'Maman').forEach(x => { (L[cm] = L[cm] || []).push({ id: uid(), type: 'revenu', label: x.label || 'Revenu', amount: +x.amount || 0 }); });
     (out.fixed || []).filter(x => x.account === 'Maman').forEach(x => { (L[cm] = L[cm] || []).push({ id: uid(), type: 'charge', label: x.label || 'Charge', amount: +x.amount || 0 }); });
@@ -333,8 +334,8 @@ function zakatDue() { return zakatBase() * 0.025; }
 function habitDoneToday(h) { return (h.dates || []).includes(todayISO()); }
 function habitStreak(h) {
   const set = new Set(h.dates || []); let s = 0; const d = new Date();
-  if (!set.has(d.toISOString().slice(0, 10))) d.setDate(d.getDate() - 1);
-  for (;;) { const iso = d.toISOString().slice(0, 10); if (set.has(iso)) { s++; d.setDate(d.getDate() - 1); } else break; }
+  if (!set.has(localISO(d))) d.setDate(d.getDate() - 1);
+  for (;;) { const iso = localISO(d); if (set.has(iso)) { s++; d.setDate(d.getDate() - 1); } else break; }
   return s;
 }
 
@@ -828,7 +829,7 @@ function recurModal(kind, id, accList) {
 function renderPlanning(v) {
   const today = todayISO();
   const days = [];
-  for (let i = 0; i < 7; i++) { const d = new Date(); d.setDate(d.getDate() + i); days.push(d.toISOString().slice(0, 10)); }
+  for (let i = 0; i < 7; i++) { const d = new Date(); d.setDate(d.getDate() + i); days.push(localISO(d)); }
   const fmtDay = (iso) => new Date(iso + 'T00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
   const CATICON = { Famille: '👨‍👩‍👧', Business: '🚚', Perso: '🙂', Religion: '🕌', Maman: '💊' };
 
@@ -911,7 +912,7 @@ function bumpEcheances() {
     let d = new Date(e.date + 'T00:00');
     const now = new Date(); now.setHours(0, 0, 0, 0);
     while (d < now) { if (e.recur === 'monthly') d.setMonth(d.getMonth() + 1); else d.setFullYear(d.getFullYear() + 1); changed = true; }
-    e.date = d.toISOString().slice(0, 10);
+    e.date = localISO(d);
   });
   if (changed) persist();
 }
@@ -943,14 +944,14 @@ function echeanceModal(id) {
    REPAS  (planning des repas par semaine + stock maison)
    ============================================================ */
 let mealWeek = weekStartISO(new Date());
-function weekStartISO(d) { const x = new Date(d); const off = (x.getDay() + 6) % 7; x.setDate(x.getDate() - off); x.setHours(0, 0, 0, 0); return x.toISOString().slice(0, 10); }
+function weekStartISO(d) { const x = new Date(d); const off = (x.getDay() + 6) % 7; x.setDate(x.getDate() - off); x.setHours(0, 0, 0, 0); return localISO(x); }
 const MEAL_SLOTS = [['matin', '🌅 Petit-déjeuner'], ['midi', '☀️ Déjeuner'], ['soir', '🌙 Dîner']];
 const STOCK_CATS = ['Viande', 'Poisson', 'Légumes', 'Fruits', 'Épicerie', 'Produits laitiers', 'Boissons', 'Autre'];
 const STOCK_ICON = { 'Viande': '🥩', 'Poisson': '🐟', 'Légumes': '🥦', 'Fruits': '🍎', 'Épicerie': '🛒', 'Produits laitiers': '🥛', 'Boissons': '🧃', 'Autre': '📦' };
 function renderRepas(v) {
   const start = new Date(mealWeek + 'T00:00');
   const days = [];
-  for (let i = 0; i < 7; i++) { const d = new Date(start); d.setDate(start.getDate() + i); days.push(d.toISOString().slice(0, 10)); }
+  for (let i = 0; i < 7; i++) { const d = new Date(start); d.setDate(start.getDate() + i); days.push(localISO(d)); }
   const end = days[6];
   const fmtD = iso => new Date(iso + 'T00:00').toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'short' });
   const fmtShort = iso => new Date(iso + 'T00:00').toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
@@ -1025,8 +1026,8 @@ function renderRepas(v) {
   };
 
   // Week nav
-  $('#wPrev', v).onclick = () => { const d = new Date(mealWeek + 'T00:00'); d.setDate(d.getDate() - 7); mealWeek = d.toISOString().slice(0, 10); router(); };
-  $('#wNext', v).onclick = () => { const d = new Date(mealWeek + 'T00:00'); d.setDate(d.getDate() + 7); mealWeek = d.toISOString().slice(0, 10); router(); };
+  $('#wPrev', v).onclick = () => { const d = new Date(mealWeek + 'T00:00'); d.setDate(d.getDate() - 7); mealWeek = localISO(d); router(); };
+  $('#wNext', v).onclick = () => { const d = new Date(mealWeek + 'T00:00'); d.setDate(d.getDate() + 7); mealWeek = localISO(d); router(); };
 
   // Liste de courses
   const shl = $('#shopList', v);
@@ -1755,7 +1756,7 @@ function renderSpirituel(v) {
   const he = $('#hijriEvents', v);
   [['Ramadan', 9, 1, '🌙'], ['Aïd al-Fitr', 10, 1, '🎉'], ['Aïd al-Adha', 12, 10, '🐑']].forEach(([nm, mo, dy, ic]) => {
     const nd = nextHijri(mo, dy); if (!nd) return;
-    const dl = daysUntil(nd.toISOString().slice(0, 10));
+    const dl = daysUntil(localISO(nd));
     he.append(el(`<div class="row between" style="padding:3px 0"><span>${ic} ${nm}</span><b class="chip ${dl <= 30 ? 'green' : 'gray'}">dans ${dl} j</b></div>`));
   });
   // Dhikr
@@ -2393,7 +2394,7 @@ function habitsModal() {
    ============================================================ */
 function renderStats(v) {
   const months = [], now = new Date();
-  for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push(d.toISOString().slice(0, 7)); }
+  for (let i = 5; i >= 0; i--) { const d = new Date(now.getFullYear(), now.getMonth() - i, 1); months.push(localISO(d).slice(0, 7)); }
   const data = months.map(m => { const tx = DB.transactions.filter(t => monthOf(t.date) === m && isOwn(t)); const dep = tx.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0); const rev = tx.filter(t => t.type === 'revenu').reduce((a, t) => a + (+t.amount || 0), 0); return { m, dep, rev }; });
   const max = Math.max(1, ...data.map(d => Math.max(d.dep, d.rev)));
   const lbl = m => new Date(m + '-01').toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
@@ -2410,7 +2411,7 @@ function renderStats(v) {
    REVUE DE LA SEMAINE (dimanche)
    ============================================================ */
 function renderRevue(v) {
-  const days = []; for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(d.toISOString().slice(0, 10)); }
+  const days = []; for (let i = 6; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push(localISO(d)); }
   const setDays = new Set(days);
   const tx = DB.transactions.filter(t => setDays.has(t.date) && isOwn(t));
   const dep = tx.filter(t => t.type === 'depense').reduce((a, t) => a + (+t.amount || 0), 0);
@@ -2702,7 +2703,7 @@ function contactModal(id) {
 /* ============================================================
    GARANTIES (achat + durée → fin auto)
    ============================================================ */
-function addMonthsISO(iso, m) { const d = new Date(iso + 'T00:00'); d.setMonth(d.getMonth() + (+m || 0)); return d.toISOString().slice(0, 10); }
+function addMonthsISO(iso, m) { const d = new Date(iso + 'T00:00'); d.setMonth(d.getMonth() + (+m || 0)); return localISO(d); }
 function exportWarrantyICS(w) {
   const end = addMonthsISO(w.date, w.months);
   const [y, m, d] = end.split('-').map(Number);
